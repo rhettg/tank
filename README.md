@@ -19,17 +19,17 @@ Graystone has two responsibilities:
 
 ## Command reference
 
-* **`gi start [name]`** — Build image (if needed) and start the VM (default name: `default`)
-* **`gi stop [name]`** — Stop the VM (default name: `default`)
-* **`gi destroy [name]`** — Stop and remove the VM completely (default name: `default`)
-* **`gi ssh [name]`** — Connect to the VM over SSH (default name: `default`)
+* **`gi start [name]`** — Build image (if needed) and start the VM (default name: project directory)
+* **`gi stop [name]`** — Stop the VM (default name: project directory)
+* **`gi destroy [name]`** — Stop and remove the VM completely (default name: project directory)
+* **`gi ssh [name]`** — Connect to the VM over SSH (default name: project directory)
 
 Run multiple instances from the same image:
 
 ```bash
-gi start primary
-gi start secondary --cpus 4
-gi start dev --memory 8192
+gi start                     # uses directory name, e.g. "myproject"
+gi start secondary --cpus 4  # custom name "secondary"
+gi start dev --memory 8192   # custom name "dev"
 ```
 
 Optional arguments to `gi start`:
@@ -112,46 +112,35 @@ There is no hidden merge logic—just filesystem semantics.
 
 ## Storage model (qcow2 backing chains)
 
-Graystone stores everything as files on disk.
+Graystone stores everything as files on disk using XDG-style cache location.
 
 ```
-~/.graystone/
-├── bases/
-│   └── ubuntu-24.04-<digest>/base.qcow2
-├── cache/
-│   └── <base-digest>/
-│       └── layerchain-<hash>.qcow2
+~/.cache/graystone/
 ├── images/
-│   └── default/
-│       ├── <image-hash>.qcow2
-│       └── current -> <image-hash>.qcow2
-├── instances/
-│   └── default/
-│       └── disk.qcow2
-└── locks/
+│   └── <base-image-name>.img
+├── builds/
+│   └── <project-hash>.qcow2
+└── instances/
+    └── <instance-name>/
+        ├── disk.qcow2
+        └── cloud-init.iso
 ```
 
-### Layer caching
+### Instance disks
 
-Each layer can produce a **cached qcow2 artifact** using backing files:
+Each instance gets a copy-on-write overlay:
 
 ```
-base.qcow2
+builds/<project-hash>.qcow2  (immutable, shared)
   ↑
-layer-10-common.qcow2
-  ↑
-layer-20-devtools.qcow2
-  ↑
-final-image.qcow2
-  ↑
-instance disk (mutable)
+instances/<name>/disk.qcow2  (mutable, per-instance)
 ```
 
 This allows:
 
-* fast rebuilds when only later layers change
-* minimal disk usage
-* native libvirt cloning
+* multiple instances from the same build
+* fast instance creation
+* changes isolated per instance
 
 ---
 

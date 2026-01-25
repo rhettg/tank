@@ -3,12 +3,27 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 
 	"github.com/rhettg/graystone/build"
+	"github.com/rhettg/graystone/instance"
 	"github.com/rhettg/graystone/project"
 	"github.com/spf13/cobra"
 )
+
+// resolveInstanceName determines the instance name from args or project path.
+func resolveInstanceName(projectPath string, args []string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	p, err := project.Load(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("loading project: %w", err)
+	}
+	return filepath.Base(p.Root), nil
+}
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -91,9 +106,149 @@ func main() {
 	buildCmd.Flags().StringVarP(&buildProjectPath, "project", "p", ".", "path to project directory")
 	buildCmd.Flags().BoolVar(&dryRun, "dry-run", false, "show build plan without executing")
 
+	var startProjectPath string
+	var startCPUs int
+	var startMemory int
+	startCmd := &cobra.Command{
+		Use:   "start [name]",
+		Short: "Build image (if needed) and start the VM",
+		Long:  "Start a VM instance. Default name is the project directory name.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := project.Load(startProjectPath)
+			if err != nil {
+				return fmt.Errorf("loading project: %w", err)
+			}
+
+			// Determine instance name
+			instanceName := filepath.Base(p.Root)
+			if len(args) > 0 {
+				instanceName = args[0]
+			}
+
+			// Check if instance already exists
+			if instance.Exists(instanceName) {
+				// Load and check if running
+				inst, err := instance.Load(instanceName)
+				if err != nil {
+					return fmt.Errorf("loading instance: %w", err)
+				}
+				if inst.IsRunning() {
+					fmt.Printf("Instance %q is already running.\n", instanceName)
+					fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+					return nil
+				}
+				// Instance exists but not running - start it
+				fmt.Printf("Starting existing instance %q...\n", instanceName)
+				cmd := exec.Command("virsh", "start", inst.Domain)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("starting VM: %w: %s", err, output)
+				}
+				fmt.Printf("Instance %q started.\n", instanceName)
+				fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+				return nil
+			}
+
+			// Build image if needed
+			fmt.Println("Building image...")
+			baseImagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("downloading base image: %w", err)
+			}
+
+			projectHash := p.Hash()
+			buildImagePath, err := build.CreateBuildImage(baseImagePath, projectHash, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("creating build image: %w", err)
+			}
+			fmt.Printf("Build ready: %s\n\n", buildImagePath)
+
+			// Create instance
+			fmt.Printf("Creating instance %q...\n", instanceName)
+			inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("creating instance: %w", err)
+			}
+
+			// Start VM
+			if err := inst.Start(startCPUs, startMemory, os.Stdout); err != nil {
+				return fmt.Errorf("starting VM: %w", err)
+			}
+
+			fmt.Printf("\nInstance %q started.\n", instanceName)
+			fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+			return nil
+		},
+	}
+	startCmd.Flags().StringVarP(&startProjectPath, "project", "p", ".", "path to project directory")
+	startCmd.Flags().IntVar(&startCPUs, "cpus", 2, "number of CPUs")
+	startCmd.Flags().IntVar(&startMemory, "memory", 4096, "memory in MB")
+
+	var stopProjectPath string
+	stopCmd := &cobra.Command{
+		Use:   "stop [name]",
+		Short: "Stop the VM",
+		Long:  "Stop a VM instance (graceful shutdown). Default name is the project directory name.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Determine instance name
+			instanceName, err := resolveInstanceName(stopProjectPath, args)
+			if err != nil {
+				return err
+			}
+
+			inst, err := instance.Load(instanceName)
+			if err != nil {
+				return fmt.Errorf("loading instance: %w", err)
+			}
+
+			if !inst.IsRunning() {
+				fmt.Printf("Instance %q is not running.\n", instanceName)
+				return nil
+			}
+
+			if err := inst.Stop(os.Stdout); err != nil {
+				return fmt.Errorf("stopping VM: %w", err)
+			}
+
+			fmt.Printf("Instance %q stopping.\n", instanceName)
+			return nil
+		},
+	}
+	stopCmd.Flags().StringVarP(&stopProjectPath, "project", "p", ".", "path to project directory")
+
+	var destroyProjectPath string
+	destroyCmd := &cobra.Command{
+		Use:   "destroy [name]",
+		Short: "Stop and remove the VM completely",
+		Long:  "Destroy a VM instance (force stop and remove all files). Default name is the project directory name.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Determine instance name
+			instanceName, err := resolveInstanceName(destroyProjectPath, args)
+			if err != nil {
+				return err
+			}
+
+			inst, err := instance.Load(instanceName)
+			if err != nil {
+				return fmt.Errorf("loading instance: %w", err)
+			}
+
+			fmt.Printf("Destroying instance %q...\n", instanceName)
+			if err := inst.Destroy(os.Stdout); err != nil {
+				return fmt.Errorf("destroying instance: %w", err)
+			}
+
+			fmt.Printf("Instance %q destroyed.\n", instanceName)
+			return nil
+		},
+	}
+	destroyCmd.Flags().StringVarP(&destroyProjectPath, "project", "p", ".", "path to project directory")
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(layersCmd)
 	rootCmd.AddCommand(buildCmd)
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(destroyCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
