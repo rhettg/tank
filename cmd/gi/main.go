@@ -68,6 +68,14 @@ func main() {
 				return build.PrintPlan(os.Stdout, p)
 			}
 
+			// Download base image
+			fmt.Println("Downloading base image...")
+			imagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("downloading base image: %w", err)
+			}
+			fmt.Printf("Base image ready: %s\n", imagePath)
+
 			return fmt.Errorf("build not yet implemented (use --dry-run)")
 		},
 	}
