@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/rhettg/graystone/build"
 	"github.com/rhettg/graystone/project"
 	"github.com/spf13/cobra"
 )
@@ -52,8 +53,30 @@ func main() {
 	}
 	layersCmd.Flags().StringVarP(&projectPath, "project", "p", ".", "path to project directory")
 
+	var buildProjectPath string
+	var dryRun bool
+	buildCmd := &cobra.Command{
+		Use:   "build",
+		Short: "Build a VM image from project layers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := project.Load(buildProjectPath)
+			if err != nil {
+				return fmt.Errorf("loading project: %w", err)
+			}
+
+			if dryRun {
+				return build.PrintPlan(os.Stdout, p)
+			}
+
+			return fmt.Errorf("build not yet implemented (use --dry-run)")
+		},
+	}
+	buildCmd.Flags().StringVarP(&buildProjectPath, "project", "p", ".", "path to project directory")
+	buildCmd.Flags().BoolVar(&dryRun, "dry-run", false, "show build plan without executing")
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(layersCmd)
+	rootCmd.AddCommand(buildCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
