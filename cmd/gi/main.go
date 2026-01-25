@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/rhettg/graystone/project"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +24,36 @@ func main() {
 		},
 	}
 
+	var projectPath string
+	layersCmd := &cobra.Command{
+		Use:   "layers",
+		Short: "List project layers and their content hashes",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := project.Load(projectPath)
+			if err != nil {
+				return fmt.Errorf("loading project: %w", err)
+			}
+
+			fmt.Printf("Base: %s\n", p.Base)
+			fmt.Println("Layers:")
+			for _, layer := range p.Layers {
+				script := "       "
+				if layer.HasScript {
+					script = "[script]"
+				}
+				files := "       "
+				if layer.HasFiles {
+					files = "[files]"
+				}
+				fmt.Printf("  %-14s %s %s  %s\n", layer.Name, script, files, layer.ContentHash[:8])
+			}
+			return nil
+		},
+	}
+	layersCmd.Flags().StringVarP(&projectPath, "project", "p", ".", "path to project directory")
+
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(layersCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
