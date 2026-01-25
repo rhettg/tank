@@ -85,7 +85,7 @@ func main() {
 			}
 			fmt.Printf("Build image ready: %s\n", buildImagePath)
 
-			return fmt.Errorf("build not yet implemented (use --dry-run)")
+			return nil
 		},
 	}
 	buildCmd.Flags().StringVarP(&buildProjectPath, "project", "p", ".", "path to project directory")
