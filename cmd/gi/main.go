@@ -4,32 +4,33 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+	rootCmd := &cobra.Command{
+		Use:   "gi",
+		Short: "Graystone Industries - deterministic VM images",
+		Long:  "Build and run disposable virtual machines using libvirt and KVM.",
 	}
 
-	switch os.Args[1] {
-	case "version":
-		cmdVersion()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		printUsage()
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("gi version %s\n", getVersion())
+		},
+	}
+
+	rootCmd.AddCommand(versionCmd)
+
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func printUsage() {
-	fmt.Fprintln(os.Stderr, "Usage: gi <command> [arguments]")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  version    Print version information")
-}
-
-func cmdVersion() {
+func getVersion() string {
 	version := "dev"
 	revision := ""
 	dirty := false
@@ -52,5 +53,5 @@ func cmdVersion() {
 		}
 	}
 
-	fmt.Printf("gi version %s\n", version)
+	return version
 }
