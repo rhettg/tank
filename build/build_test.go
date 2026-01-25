@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -195,5 +196,79 @@ func TestFormatBytes(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatBytes(%d) = %q, want %q", tt.bytes, got, tt.want)
 		}
+	}
+}
+
+func TestBuildImagePath(t *testing.T) {
+	path, err := BuildImagePath("abc123")
+	if err != nil {
+		t.Fatalf("BuildImagePath() error: %v", err)
+	}
+
+	if !strings.HasSuffix(path, ".cache/graystone/builds/abc123.qcow2") {
+		t.Errorf("BuildImagePath() = %q, want suffix .cache/graystone/builds/abc123.qcow2", path)
+	}
+}
+
+func TestBuildImageExists(t *testing.T) {
+	// Non-existent build should return false
+	exists := BuildImageExists("nonexistent-hash-12345")
+	if exists {
+		t.Error("BuildImageExists() = true for non-existent build, want false")
+	}
+}
+
+func TestCreateBuildImage(t *testing.T) {
+	// Create temp directory for cache
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", originalHome)
+
+	// Create a fake base image
+	baseDir := filepath.Join(tmpDir, "base")
+	os.MkdirAll(baseDir, 0755)
+	baseImagePath := filepath.Join(baseDir, "test.qcow2")
+	testContent := []byte("fake qcow2 image content")
+	if err := os.WriteFile(baseImagePath, testContent, 0644); err != nil {
+		t.Fatalf("writing test base image: %v", err)
+	}
+
+	// Create build image
+	var progress bytes.Buffer
+	projectHash := "testhash123"
+	buildPath, err := CreateBuildImage(baseImagePath, projectHash, &progress)
+	if err != nil {
+		t.Fatalf("CreateBuildImage() error: %v", err)
+	}
+
+	// Verify build image was created
+	content, err := os.ReadFile(buildPath)
+	if err != nil {
+		t.Fatalf("reading build image: %v", err)
+	}
+	if string(content) != string(testContent) {
+		t.Errorf("build image content = %q, want %q", content, testContent)
+	}
+
+	// Verify progress output
+	if !strings.Contains(progress.String(), "Source:") {
+		t.Error("progress missing 'Source:'")
+	}
+	if !strings.Contains(progress.String(), "Created:") {
+		t.Error("progress missing 'Created:'")
+	}
+
+	// Test cached case
+	progress.Reset()
+	cachedPath, err := CreateBuildImage(baseImagePath, projectHash, &progress)
+	if err != nil {
+		t.Fatalf("CreateBuildImage() cached error: %v", err)
+	}
+	if cachedPath != buildPath {
+		t.Errorf("cached path = %q, want %q", cachedPath, buildPath)
+	}
+	if !strings.Contains(progress.String(), "Using existing build image") {
+		t.Error("progress missing 'Using existing build image' for cached build")
 	}
 }

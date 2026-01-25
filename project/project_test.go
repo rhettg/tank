@@ -117,3 +117,64 @@ func TestHashChangesOnModification(t *testing.T) {
 		t.Error("hash should change after script modification")
 	}
 }
+
+func TestProjectHash(t *testing.T) {
+	p, err := Load("../testdata/example-project")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	hash := p.Hash()
+
+	// Hash should be 64 hex characters (SHA256)
+	if len(hash) != 64 {
+		t.Errorf("Hash() length = %d, want 64", len(hash))
+	}
+
+	// Hash should be deterministic
+	hash2 := p.Hash()
+	if hash != hash2 {
+		t.Error("Hash() not deterministic")
+	}
+}
+
+func TestProjectHashChanges(t *testing.T) {
+	// Create a temp project
+	tmpDir := t.TempDir()
+
+	// Create BASE
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("test-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a layer
+	layerDir := filepath.Join(tmpDir, "layers", "10-test")
+	if err := os.MkdirAll(layerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layerDir, "install.sh"), []byte("echo hello\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and get project hash
+	p1, err := Load(tmpDir)
+	if err != nil {
+		t.Fatalf("first Load failed: %v", err)
+	}
+	hash1 := p1.Hash()
+
+	// Modify the base
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("different-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err := Load(tmpDir)
+	if err != nil {
+		t.Fatalf("second Load failed: %v", err)
+	}
+	hash2 := p2.Hash()
+
+	if hash1 == hash2 {
+		t.Error("project hash should change when BASE changes")
+	}
+}

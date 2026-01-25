@@ -1,6 +1,8 @@
 package project
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,6 +24,28 @@ type Project struct {
 	Base      string  // Contents of BASE file
 	Layers    []Layer // Sorted lexicographically by name
 	CloudInit string  // Contents of cloud-init.yaml (if exists)
+}
+
+// Hash computes a deterministic hash of the entire project configuration.
+// This includes the base image URL, all layer hashes, and cloud-init content.
+func (p *Project) Hash() string {
+	h := sha256.New()
+
+	// Include base image URL
+	h.Write([]byte("base:" + p.Base + "\n"))
+
+	// Include all layer hashes (already sorted)
+	for _, layer := range p.Layers {
+		h.Write([]byte("layer:" + layer.Name + ":" + layer.ContentHash + "\n"))
+	}
+
+	// Include cloud-init if present
+	if p.CloudInit != "" {
+		h.Write([]byte("cloud-init:\n"))
+		h.Write([]byte(p.CloudInit))
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Load reads a project from the given path.

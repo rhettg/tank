@@ -70,11 +70,20 @@ func main() {
 
 			// Download base image
 			fmt.Println("Downloading base image...")
-			imagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
+			baseImagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("downloading base image: %w", err)
 			}
-			fmt.Printf("Base image ready: %s\n", imagePath)
+			fmt.Printf("Base image ready: %s\n\n", baseImagePath)
+
+			// Create build image
+			projectHash := p.Hash()
+			fmt.Printf("Creating build image (project hash: %s)...\n", projectHash[:8])
+			buildImagePath, err := build.CreateBuildImage(baseImagePath, projectHash, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("creating build image: %w", err)
+			}
+			fmt.Printf("Build image ready: %s\n", buildImagePath)
 
 			return fmt.Errorf("build not yet implemented (use --dry-run)")
 		},

@@ -154,6 +154,84 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
+// BuildImagePath returns the path where the build image should be stored.
+func BuildImagePath(projectHash string) (string, error) {
+	cacheDir, err := CacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "builds", projectHash+".qcow2"), nil
+}
+
+// BuildImageExists returns true if a build image already exists for this project hash.
+func BuildImageExists(projectHash string) bool {
+	path, err := BuildImagePath(projectHash)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
+// CreateBuildImage copies the base image to create a new build image.
+// Progress is written to the provided writer.
+// Returns the path to the new build image.
+func CreateBuildImage(baseImagePath, projectHash string, progress io.Writer) (string, error) {
+	destPath, err := BuildImagePath(projectHash)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if already exists
+	if _, err := os.Stat(destPath); err == nil {
+		fmt.Fprintf(progress, "  Using existing build image: %s\n", destPath)
+		return destPath, nil
+	}
+
+	// Create builds directory
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return "", err
+	}
+
+	fmt.Fprintf(progress, "  Source: %s\n", baseImagePath)
+
+	// Open source file
+	src, err := os.Open(baseImagePath)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	// Get source size for progress
+	srcInfo, err := src.Stat()
+	if err != nil {
+		return "", err
+	}
+
+	// Write to temp file, then rename (atomic)
+	tmpPath := destPath + ".tmp"
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Copy with progress tracking
+	_, err = copyWithProgress(dst, src, srcInfo.Size(), progress)
+	dst.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	// Rename to final path
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return "", err
+	}
+
+	fmt.Fprintf(progress, "  Created: %s\n", destPath)
+	return destPath, nil
+}
+
 // PrintPlan prints the build plan for dry-run output.
 func PrintPlan(w io.Writer, p *project.Project) error {
 	fmt.Fprintf(w, "Build Plan for: %s\n", p.Root)
@@ -201,17 +279,27 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 	}
 
 	// Output section
-	cacheDir, err := CacheDir()
+	projectHash := p.Hash()
+	fmt.Fprintf(w, "Output:\n")
+	fmt.Fprintf(w, "  Project hash: %s\n", projectHash[:8])
+
+	buildPath, err := BuildImagePath(projectHash)
 	if err != nil {
-		cacheDir = "~/.cache/graystone"
+		buildPath = "~/.cache/graystone/builds/" + projectHash + ".qcow2"
 	} else {
 		// Replace home dir with ~ for display
 		home, _ := os.UserHomeDir()
 		if home != "" {
-			cacheDir = strings.Replace(cacheDir, home, "~", 1)
+			buildPath = strings.Replace(buildPath, home, "~", 1)
 		}
 	}
-	fmt.Fprintf(w, "Output: %s/builds/<project-hash>.qcow2\n", cacheDir)
+	fmt.Fprintf(w, "  Image: %s\n", buildPath)
+
+	if BuildImageExists(projectHash) {
+		fmt.Fprintf(w, "  Status: exists (would skip copy)\n")
+	} else {
+		fmt.Fprintf(w, "  Status: not built (would copy base image)\n")
+	}
 
 	return nil
 }
