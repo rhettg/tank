@@ -13,13 +13,9 @@ import (
 	"github.com/rhettg/graystone/project"
 )
 
-// CacheDir returns the graystone cache directory (~/.cache/graystone).
+// CacheDir returns the graystone storage directory (/var/lib/graystone).
 func CacheDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".cache", "graystone"), nil
+	return "/var/lib/graystone", nil
 }
 
 // BaseImagePath returns the cache path for a base image URL.
@@ -285,13 +281,7 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 
 	buildPath, err := BuildImagePath(projectHash)
 	if err != nil {
-		buildPath = "~/.cache/graystone/builds/" + projectHash + ".qcow2"
-	} else {
-		// Replace home dir with ~ for display
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			buildPath = strings.Replace(buildPath, home, "~", 1)
-		}
+		buildPath = "/var/lib/graystone/builds/" + projectHash + ".qcow2"
 	}
 	fmt.Fprintf(w, "  Image: %s\n", buildPath)
 

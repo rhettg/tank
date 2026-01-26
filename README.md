@@ -110,12 +110,50 @@ layers/
 
 There is no hidden merge logic—just filesystem semantics.
 
+## Prerequisites
+
+Graystone requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM management.
+
+### System packages
+
+- `libvirt`
+- `qemu-full` (or equivalent)
+- `genisoimage` (for cloud-init ISOs)
+
+### Groups
+
+Your user must be in the `libvirt` group:
+
+```bash
+sudo usermod -aG libvirt $USER
+```
+
+Log out and back in for the group to take effect.
+
+### Storage directory
+
+Graystone stores images and instances in `/var/lib/graystone`. Create it with:
+
+```bash
+sudo mkdir -p /var/lib/graystone
+sudo chown root:libvirt /var/lib/graystone
+sudo chmod 2775 /var/lib/graystone
+```
+
+This gives:
+- `root` ownership (conventional for `/var/lib`)
+- `libvirt` group with write access (so any `libvirt` group member can run `gi`)
+- Setgid bit so new files/directories inherit the `libvirt` group
+- `libvirt-qemu` (the user QEMU runs as under system mode) can read images via world-readable permissions
+
+---
+
 ## Storage model (qcow2 backing chains)
 
-Graystone stores everything as files on disk using XDG-style cache location.
+Graystone stores everything under `/var/lib/graystone/`.
 
 ```
-~/.cache/graystone/
+/var/lib/graystone/
 ├── images/
 │   └── <base-image-name>.img
 ├── builds/

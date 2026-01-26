@@ -134,17 +134,17 @@ func main() {
 				}
 				if inst.IsRunning() {
 					fmt.Printf("Instance %q is already running.\n", instanceName)
-					fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+					fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
 					return nil
 				}
 				// Instance exists but not running - start it
 				fmt.Printf("Starting existing instance %q...\n", instanceName)
-				cmd := exec.Command("virsh", "start", inst.Domain)
+				cmd := exec.Command("virsh", "-c", "qemu:///system", "start", inst.Domain)
 				if output, err := cmd.CombinedOutput(); err != nil {
 					return fmt.Errorf("starting VM: %w: %s", err, output)
 				}
 				fmt.Printf("Instance %q started.\n", instanceName)
-				fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+				fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
 				return nil
 			}
 
@@ -162,9 +162,19 @@ func main() {
 			}
 			fmt.Printf("Build ready: %s\n\n", buildImagePath)
 
+			// Determine cloud-init config
+			cloudInit := p.CloudInit
+			if cloudInit == "" {
+				fmt.Println("No cloud-init.yaml found, generating default (user + SSH key)...")
+				cloudInit, err = instance.DefaultCloudInit()
+				if err != nil {
+					return fmt.Errorf("generating default cloud-init: %w", err)
+				}
+			}
+
 			// Create instance
 			fmt.Printf("Creating instance %q...\n", instanceName)
-			inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
+			inst, err := instance.Create(instanceName, buildImagePath, cloudInit, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("creating instance: %w", err)
 			}
@@ -175,7 +185,7 @@ func main() {
 			}
 
 			fmt.Printf("\nInstance %q started.\n", instanceName)
-			fmt.Printf("  Connect with: virsh console %s\n", inst.Domain)
+			fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
 			return nil
 		},
 	}

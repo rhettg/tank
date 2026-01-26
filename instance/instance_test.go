@@ -2,8 +2,6 @@ package instance
 
 import (
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -13,8 +11,8 @@ func TestInstanceDir(t *testing.T) {
 		t.Fatalf("InstanceDir() error: %v", err)
 	}
 
-	if !strings.HasSuffix(dir, ".cache/graystone/instances/test-instance") {
-		t.Errorf("InstanceDir() = %q, want suffix .cache/graystone/instances/test-instance", dir)
+	if dir != "/var/lib/graystone/instances/test-instance" {
+		t.Errorf("InstanceDir() = %q, want /var/lib/graystone/instances/test-instance", dir)
 	}
 }
 
@@ -34,19 +32,15 @@ func TestLoadNonExistent(t *testing.T) {
 }
 
 func TestDomainName(t *testing.T) {
-	// Use a temp directory for the cache
-	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
-
-	// Create a fake instance directory
-	instanceDir := filepath.Join(tmpDir, ".cache", "graystone", "instances", "myproject")
+	// Create a fake instance directory at the expected path
+	instanceDir := "/var/lib/graystone/instances/myproject"
 	if err := os.MkdirAll(instanceDir, 0755); err != nil {
-		t.Fatal(err)
+		t.Skipf("cannot create test directory (need write access to /var/lib/graystone): %v", err)
 	}
+	defer os.RemoveAll(instanceDir)
+
 	// Create disk file so Load doesn't fail
-	if err := os.WriteFile(filepath.Join(instanceDir, "disk.qcow2"), []byte("fake"), 0644); err != nil {
+	if err := os.WriteFile(instanceDir+"/disk.qcow2", []byte("fake"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

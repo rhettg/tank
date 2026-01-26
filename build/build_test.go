@@ -18,8 +18,8 @@ func TestCacheDir(t *testing.T) {
 		t.Fatalf("CacheDir() error: %v", err)
 	}
 
-	if !strings.HasSuffix(dir, ".cache/graystone") {
-		t.Errorf("CacheDir() = %q, want suffix .cache/graystone", dir)
+	if dir != "/var/lib/graystone" {
+		t.Errorf("CacheDir() = %q, want /var/lib/graystone", dir)
 	}
 }
 
@@ -102,12 +102,17 @@ func TestBaseImagePath(t *testing.T) {
 		t.Fatalf("BaseImagePath() error: %v", err)
 	}
 
-	if !strings.HasSuffix(path, ".cache/graystone/images/test.img") {
-		t.Errorf("BaseImagePath() = %q, want suffix .cache/graystone/images/test.img", path)
+	if path != "/var/lib/graystone/images/test.img" {
+		t.Errorf("BaseImagePath() = %q, want /var/lib/graystone/images/test.img", path)
 	}
 }
 
 func TestDownloadBaseImage(t *testing.T) {
+	// Ensure we can write to the storage directory
+	if err := os.MkdirAll("/var/lib/graystone/images", 0755); err != nil {
+		t.Skipf("cannot create storage directory (need write access to /var/lib/graystone): %v", err)
+	}
+
 	// Create a test server
 	testContent := []byte("test image content")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,21 +121,19 @@ func TestDownloadBaseImage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Use a temp directory for the cache
-	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	// Clean up test image after test
+	imagePath := "/var/lib/graystone/images/test-download.img"
+	defer os.Remove(imagePath)
 
 	// Download the image
 	var progress bytes.Buffer
-	imagePath, err := DownloadBaseImage(server.URL+"/test.img", &progress)
+	gotPath, err := DownloadBaseImage(server.URL+"/test-download.img", &progress)
 	if err != nil {
 		t.Fatalf("DownloadBaseImage() error: %v", err)
 	}
 
 	// Verify the file was downloaded
-	content, err := os.ReadFile(imagePath)
+	content, err := os.ReadFile(gotPath)
 	if err != nil {
 		t.Fatalf("reading downloaded file: %v", err)
 	}
@@ -145,12 +148,12 @@ func TestDownloadBaseImage(t *testing.T) {
 
 	// Test cached case - should return immediately
 	progress.Reset()
-	cachedPath, err := DownloadBaseImage(server.URL+"/test.img", &progress)
+	cachedPath, err := DownloadBaseImage(server.URL+"/test-download.img", &progress)
 	if err != nil {
 		t.Fatalf("DownloadBaseImage() cached error: %v", err)
 	}
-	if cachedPath != imagePath {
-		t.Errorf("cached path = %q, want %q", cachedPath, imagePath)
+	if cachedPath != gotPath {
+		t.Errorf("cached path = %q, want %q", cachedPath, gotPath)
 	}
 	if !strings.Contains(progress.String(), "Using cached image") {
 		t.Error("progress output missing 'Using cached image' for cached file")
@@ -158,15 +161,14 @@ func TestDownloadBaseImage(t *testing.T) {
 }
 
 func TestDownloadBaseImageNotFound(t *testing.T) {
+	if err := os.MkdirAll("/var/lib/graystone/images", 0755); err != nil {
+		t.Skipf("cannot create storage directory (need write access to /var/lib/graystone): %v", err)
+	}
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer server.Close()
-
-	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
 
 	var progress bytes.Buffer
 	_, err := DownloadBaseImage(server.URL+"/notfound.img", &progress)
@@ -205,8 +207,8 @@ func TestBuildImagePath(t *testing.T) {
 		t.Fatalf("BuildImagePath() error: %v", err)
 	}
 
-	if !strings.HasSuffix(path, ".cache/graystone/builds/abc123.qcow2") {
-		t.Errorf("BuildImagePath() = %q, want suffix .cache/graystone/builds/abc123.qcow2", path)
+	if path != "/var/lib/graystone/builds/abc123.qcow2" {
+		t.Errorf("BuildImagePath() = %q, want /var/lib/graystone/builds/abc123.qcow2", path)
 	}
 }
 
@@ -219,13 +221,12 @@ func TestBuildImageExists(t *testing.T) {
 }
 
 func TestCreateBuildImage(t *testing.T) {
-	// Create temp directory for cache
-	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	if err := os.MkdirAll("/var/lib/graystone/builds", 0755); err != nil {
+		t.Skipf("cannot create storage directory (need write access to /var/lib/graystone): %v", err)
+	}
 
-	// Create a fake base image
+	// Create a fake base image in a temp directory
+	tmpDir := t.TempDir()
 	baseDir := filepath.Join(tmpDir, "base")
 	os.MkdirAll(baseDir, 0755)
 	baseImagePath := filepath.Join(baseDir, "test.qcow2")
@@ -234,9 +235,12 @@ func TestCreateBuildImage(t *testing.T) {
 		t.Fatalf("writing test base image: %v", err)
 	}
 
+	// Clean up build image after test
+	projectHash := "testhash123"
+	defer os.Remove("/var/lib/graystone/builds/" + projectHash + ".qcow2")
+
 	// Create build image
 	var progress bytes.Buffer
-	projectHash := "testhash123"
 	buildPath, err := CreateBuildImage(baseImagePath, projectHash, &progress)
 	if err != nil {
 		t.Fatalf("CreateBuildImage() error: %v", err)

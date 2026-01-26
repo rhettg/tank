@@ -78,7 +78,7 @@ Orchestrates the image build process:
 1. **Base Image Acquisition**
    - Read `BASE` file (local path or remote URL)
    - Download if needed
-   - Store in `~/.graystone/bases/<digest>/`
+   - Store in `/var/lib/graystone/bases/<digest>/`
    - Skip if cached
 
 2. **Layer Application** (in lexicographic order)
@@ -90,12 +90,12 @@ Orchestrates the image build process:
      - Unmount and finalize
 
 3. **Image Caching**
-   - Cache intermediate layer artifacts in `~/.graystone/cache/`
+   - Cache intermediate layer artifacts in `/var/lib/graystone/cache/`
    - Use content-addressed naming (hash-based)
    - Rebuild only layers that changed
 
 4. **Final Image**
-   - Store in `~/.graystone/images/<project-name>/`
+   - Store in `/var/lib/graystone/images/<project-name>/`
    - Link as `current` for easy reference
    - Symlink back to specific version
 
@@ -104,7 +104,7 @@ Orchestrates the image build process:
 Creates and manages running VMs:
 
 1. **Instance Creation**
-   - Clone final image to `~/.graystone/instances/<name>/disk.qcow2`
+   - Clone final image to `/var/lib/graystone/instances/<name>/disk.qcow2`
    - Create libvirt domain XML with specified resources
    - Inject cloud-init data if provided
 
@@ -125,7 +125,7 @@ Creates and manages running VMs:
 
 **Directory Layout:**
 ```
-~/.graystone/
+/var/lib/graystone/
 ├── bases/                          # Immutable base images
 │   └── <base-digest>/
 │       └── base.qcow2
@@ -211,7 +211,7 @@ instance/disk.qcow2 (mutable, per-VM)
 
 ```
 Image hash: sha256(base_digest + all_layer_hashes)
-Image path: ~/.graystone/images/<project>/
+Image path: /var/lib/graystone/images/<project>/
 Link:       current -> <image_hash>.qcow2
 ```
 
@@ -236,7 +236,7 @@ Link:       current -> <image_hash>.qcow2
 
 ### Locking and Concurrency
 
-- Use file locks in `~/.graystone/locks/`
+- Use file locks in `/var/lib/graystone/locks/`
 - Prevent concurrent builds of same image
 - Allow concurrent instance creation from built images
 - Lock per project name
@@ -381,6 +381,28 @@ gi ssh secondary
 - Integration tests with libvirt (mock or local)
 - End-to-end tests building real images
 - Compatibility tests across distros
+
+## Libvirt Connection: System vs Session Mode
+
+Graystone uses `qemu:///system` (system mode) rather than `qemu:///session` (session mode).
+
+### Why not session mode?
+
+Session mode (`qemu:///session`) runs QEMU as the current user and provides user-scoped VM management. In theory this avoids needing group membership or elevated permissions. In practice, session mode has fundamental networking limitations:
+
+- **Bridge networking doesn't work reliably.** `qemu-bridge-helper` fails to attach tap devices to bridges, even with correct ACL configuration.
+- **Firewall conflicts.** libvirt's session-mode networking generates iptables rules, but modern distributions (e.g., Arch Linux) use nftables. The rules never take effect, so NAT and forwarding don't work.
+- **No DHCP/DNS connectivity.** Without working bridge or NAT networking, VMs can't get IP addresses or resolve DNS. User-mode networking (`-netdev user`) works but is slow and doesn't allow inbound connections.
+
+These issues make session mode impractical for a tool that needs VMs to be reachable over SSH.
+
+### System mode requirements
+
+System mode (`qemu:///system`) runs QEMU as the `libvirt-qemu` user and lets libvirt manage networking (bridges, DHCP, DNS, firewall rules) centrally. This requires:
+
+1. **User must be in the `libvirt` group** — for unprivileged access to the system libvirt daemon.
+2. **Storage in `/var/lib/graystone/`** — so the `libvirt-qemu` user can read disk images. The directory is owned by `root:libvirt` with mode `2775` (setgid), so any `libvirt` group member can write, and `libvirt-qemu` reads via world-readable file permissions.
+3. **`--network default`** — uses libvirt's managed default network (virbr0 bridge with NAT, DHCP, and DNS), which works out of the box with system mode.
 
 ## Dependencies
 

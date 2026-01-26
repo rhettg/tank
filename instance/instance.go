@@ -5,11 +5,63 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 
 	"github.com/rhettg/graystone/build"
 )
+
+// DefaultCloudInit generates a cloud-init config that creates a user matching
+// the current user with their SSH public key for passwordless access.
+func DefaultCloudInit() (string, error) {
+	// Get current username
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("getting current user: %w", err)
+	}
+
+	// Find SSH public key
+	sshKey, err := findSSHPublicKey()
+	if err != nil {
+		return "", err
+	}
+
+	// Generate cloud-init YAML
+	cloudInit := fmt.Sprintf(`#cloud-config
+users:
+  - name: %s
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - %s
+`, currentUser.Username, sshKey)
+
+	return cloudInit, nil
+}
+
+// findSSHPublicKey looks for an SSH public key in standard locations.
+func findSSHPublicKey() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting home directory: %w", err)
+	}
+
+	// Try common key types in order of preference
+	keyFiles := []string{
+		filepath.Join(home, ".ssh", "id_ed25519.pub"),
+		filepath.Join(home, ".ssh", "id_rsa.pub"),
+	}
+
+	for _, keyFile := range keyFiles {
+		content, err := os.ReadFile(keyFile)
+		if err == nil {
+			return strings.TrimSpace(string(content)), nil
+		}
+	}
+
+	return "", fmt.Errorf("no SSH public key found (tried ~/.ssh/id_ed25519.pub, ~/.ssh/id_rsa.pub)")
+}
 
 // Instance represents a running or stopped VM instance.
 type Instance struct {
@@ -122,6 +174,18 @@ func createCloudInitISO(isoPath, userData string) error {
 		return err
 	}
 
+	// Write network-config (enable DHCP on first ethernet interface)
+	networkConfig := `version: 2
+ethernets:
+  id0:
+    match:
+      driver: virtio_net
+    dhcp4: true
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "network-config"), []byte(networkConfig), 0644); err != nil {
+		return err
+	}
+
 	// Create ISO using available tool (try genisoimage, mkisofs, then xorriso)
 	var cmd *exec.Cmd
 	if _, err := exec.LookPath("genisoimage"); err == nil {
@@ -132,6 +196,7 @@ func createCloudInitISO(isoPath, userData string) error {
 			"-rock",
 			filepath.Join(tmpDir, "meta-data"),
 			filepath.Join(tmpDir, "user-data"),
+			filepath.Join(tmpDir, "network-config"),
 		)
 	} else if _, err := exec.LookPath("mkisofs"); err == nil {
 		cmd = exec.Command("mkisofs",
@@ -141,6 +206,7 @@ func createCloudInitISO(isoPath, userData string) error {
 			"-rock",
 			filepath.Join(tmpDir, "meta-data"),
 			filepath.Join(tmpDir, "user-data"),
+			filepath.Join(tmpDir, "network-config"),
 		)
 	} else if _, err := exec.LookPath("xorriso"); err == nil {
 		cmd = exec.Command("xorriso",
@@ -151,6 +217,7 @@ func createCloudInitISO(isoPath, userData string) error {
 			"-rock",
 			filepath.Join(tmpDir, "meta-data"),
 			filepath.Join(tmpDir, "user-data"),
+			filepath.Join(tmpDir, "network-config"),
 		)
 	} else {
 		return fmt.Errorf("no ISO creation tool found (need genisoimage, mkisofs, or xorriso)")
@@ -168,6 +235,7 @@ func (inst *Instance) Start(cpus, memoryMB int, progress io.Writer) error {
 	fmt.Fprintf(progress, "  Starting VM %s...\n", inst.Domain)
 
 	args := []string{
+		"--connect", "qemu:///system",
 		"--name", inst.Domain,
 		"--memory", fmt.Sprintf("%d", memoryMB),
 		"--vcpus", fmt.Sprintf("%d", cpus),
@@ -222,7 +290,7 @@ func Load(name string) (*Instance, error) {
 
 // IsRunning checks if the VM is currently running.
 func (inst *Instance) IsRunning() bool {
-	cmd := exec.Command("virsh", "domstate", inst.Domain)
+	cmd := exec.Command("virsh", "-c", "qemu:///system", "domstate", inst.Domain)
 	output, err := cmd.Output()
 	if err != nil {
 		return false
@@ -233,7 +301,7 @@ func (inst *Instance) IsRunning() bool {
 // Stop stops the VM (graceful shutdown).
 func (inst *Instance) Stop(progress io.Writer) error {
 	fmt.Fprintf(progress, "  Stopping VM %s...\n", inst.Domain)
-	cmd := exec.Command("virsh", "shutdown", inst.Domain)
+	cmd := exec.Command("virsh", "-c", "qemu:///system", "shutdown", inst.Domain)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, output)
@@ -246,13 +314,13 @@ func (inst *Instance) Destroy(progress io.Writer) error {
 	// Force stop if running
 	if inst.IsRunning() {
 		fmt.Fprintf(progress, "  Force stopping VM %s...\n", inst.Domain)
-		cmd := exec.Command("virsh", "destroy", inst.Domain)
+		cmd := exec.Command("virsh", "-c", "qemu:///system", "destroy", inst.Domain)
 		cmd.Run() // Ignore error if not running
 	}
 
 	// Undefine the domain
 	fmt.Fprintf(progress, "  Removing VM definition...\n")
-	cmd := exec.Command("virsh", "undefine", inst.Domain)
+	cmd := exec.Command("virsh", "-c", "qemu:///system", "undefine", inst.Domain)
 	cmd.Run() // Ignore error if not defined
 
 	// Remove instance directory
