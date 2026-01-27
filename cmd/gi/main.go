@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -370,7 +371,17 @@ func main() {
 			sshCmd.Stdin = os.Stdin
 			sshCmd.Stdout = os.Stdout
 			sshCmd.Stderr = os.Stderr
-			return sshCmd.Run()
+
+			if err := sshCmd.Run(); err != nil {
+				// If SSH exited with a non-zero status, propagate the exit code
+				// without printing cobra's usage text.
+				var exitErr *exec.ExitError
+				if errors.As(err, &exitErr) {
+					os.Exit(exitErr.ExitCode())
+				}
+				return err
+			}
+			return nil
 		},
 	}
 	sshCmd.Flags().StringVarP(&sshProjectPath, "project", "p", ".", "path to project directory")
