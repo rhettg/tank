@@ -126,7 +126,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 	// Create cloud-init ISO if we have cloud-init config
 	if cloudInitYAML != "" {
 		fmt.Fprintf(progress, "  Creating cloud-init ISO...\n")
-		if err := createCloudInitISO(inst.ISOPath, cloudInitYAML); err != nil {
+		if err := createCloudInitISO(inst.ISOPath, cloudInitYAML, name); err != nil {
 			os.RemoveAll(dir)
 			return nil, fmt.Errorf("creating cloud-init ISO: %w", err)
 		}
@@ -155,7 +155,7 @@ func createOverlayDisk(diskPath, backingFile string) error {
 }
 
 // createCloudInitISO creates a NoCloud ISO with the given user-data.
-func createCloudInitISO(isoPath, userData string) error {
+func createCloudInitISO(isoPath, userData, instanceName string) error {
 	// Create temp directory for ISO contents
 	tmpDir, err := os.MkdirTemp("", "cloud-init-")
 	if err != nil {
@@ -164,10 +164,15 @@ func createCloudInitISO(isoPath, userData string) error {
 	defer os.RemoveAll(tmpDir)
 
 	// Write meta-data (minimal, just instance-id)
-	metaData := "instance-id: graystone\nlocal-hostname: graystone\n"
+	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", instanceName, instanceName)
 	if err := os.WriteFile(filepath.Join(tmpDir, "meta-data"), []byte(metaData), 0644); err != nil {
 		return err
 	}
+
+	// Inject hostname into user-data
+	// Append hostname and manage_etc_hosts directives so cloud-init
+	// sets the hostname regardless of what the base image has cached.
+	userData = userData + fmt.Sprintf("\nhostname: %s\nmanage_etc_hosts: true\n", instanceName)
 
 	// Write user-data
 	if err := os.WriteFile(filepath.Join(tmpDir, "user-data"), []byte(userData), 0644); err != nil {
