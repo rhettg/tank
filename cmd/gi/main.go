@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime/debug"
+	"time"
 
 	"github.com/rhettg/graystone/build"
 	"github.com/rhettg/graystone/instance"
@@ -295,6 +297,84 @@ func main() {
 	}
 	destroyCmd.Flags().StringVarP(&destroyProjectPath, "project", "p", ".", "path to project directory")
 
+	var sshProjectPath string
+	sshCmd := &cobra.Command{
+		Use:   "ssh [name] [-- ssh_args...]",
+		Short: "SSH into a running VM",
+		Long:  "Connect to a running VM instance via SSH. Default name is the project directory name.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Split args at -- into instance name args and SSH args
+			var nameArgs, extraSSHArgs []string
+			dashIdx := cmd.ArgsLenAtDash()
+			if dashIdx >= 0 {
+				nameArgs = args[:dashIdx]
+				extraSSHArgs = args[dashIdx:]
+			} else {
+				nameArgs = args
+			}
+
+			// Determine instance name
+			instanceName, err := resolveInstanceName(sshProjectPath, nameArgs)
+			if err != nil {
+				return err
+			}
+
+			inst, err := instance.Load(instanceName)
+			if err != nil {
+				return fmt.Errorf("loading instance: %w\n\nIs the instance created? Run 'gi start' first.", err)
+			}
+
+			if !inst.IsRunning() {
+				return fmt.Errorf("instance %q is not running (run 'gi start' first)", instanceName)
+			}
+
+			// Get current username (matches cloud-init user)
+			currentUser, err := user.Current()
+			if err != nil {
+				return fmt.Errorf("getting current user: %w", err)
+			}
+
+			// Get VM IP address with retries
+			var ip string
+			for attempt := 0; attempt < 30; attempt++ {
+				ip, err = inst.IPAddress()
+				if err != nil {
+					return err
+				}
+				if ip != "" {
+					break
+				}
+				if attempt == 0 {
+					fmt.Fprintf(os.Stderr, "Waiting for VM to get an IP address...")
+				} else {
+					fmt.Fprintf(os.Stderr, ".")
+				}
+				time.Sleep(2 * time.Second)
+			}
+			if ip == "" {
+				return fmt.Errorf("timed out waiting for VM IP address")
+			}
+
+			// Build SSH command
+			sshArgs := []string{
+				"-o", "StrictHostKeyChecking=no",
+				"-o", "UserKnownHostsFile=/dev/null",
+				"-o", "LogLevel=ERROR",
+				fmt.Sprintf("%s@%s", currentUser.Username, ip),
+			}
+
+			// Append any extra args passed after --
+			sshArgs = append(sshArgs, extraSSHArgs...)
+
+			sshCmd := exec.Command("ssh", sshArgs...)
+			sshCmd.Stdin = os.Stdin
+			sshCmd.Stdout = os.Stdout
+			sshCmd.Stderr = os.Stderr
+			return sshCmd.Run()
+		},
+	}
+	sshCmd.Flags().StringVarP(&sshProjectPath, "project", "p", ".", "path to project directory")
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(layersCmd)
@@ -302,6 +382,7 @@ func main() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(destroyCmd)
+	rootCmd.AddCommand(sshCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

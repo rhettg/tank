@@ -288,6 +288,32 @@ func Load(name string) (*Instance, error) {
 	return inst, nil
 }
 
+// IPAddress returns the VM's IPv4 address via virsh domifaddr.
+// Returns empty string if no address is found (e.g., VM still booting).
+func (inst *Instance) IPAddress() (string, error) {
+	cmd := exec.Command("virsh", "-c", "qemu:///system", "domifaddr", inst.Domain)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("querying VM address: %w", err)
+	}
+
+	// Parse output lines looking for ipv4 address
+	// Format: " vnet0  52:54:00:xx:xx:xx  ipv4  192.168.122.xxx/24"
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && fields[2] == "ipv4" {
+			addr := fields[3]
+			// Strip CIDR suffix
+			if idx := strings.Index(addr, "/"); idx != -1 {
+				addr = addr[:idx]
+			}
+			return addr, nil
+		}
+	}
+
+	return "", nil
+}
+
 // IsRunning checks if the VM is currently running.
 func (inst *Instance) IsRunning() bool {
 	cmd := exec.Command("virsh", "-c", "qemu:///system", "domstate", inst.Domain)
