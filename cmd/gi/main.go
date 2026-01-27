@@ -40,6 +40,54 @@ func main() {
 		},
 	}
 
+	var initProjectPath string
+	initCmd := &cobra.Command{
+		Use:   "init <base-url>",
+		Short: "Initialize a new graystone project",
+		Long:  "Create a new project directory with BASE, cloud-init.yaml, and a starter layer.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			baseURL := args[0]
+			dir := initProjectPath
+
+			// Don't overwrite existing project
+			if _, err := os.Stat(filepath.Join(dir, "BASE")); err == nil {
+				return fmt.Errorf("project already exists in %s (BASE file found)", dir)
+			}
+
+			// Create BASE file
+			if err := os.WriteFile(filepath.Join(dir, "BASE"), []byte(baseURL+"\n"), 0644); err != nil {
+				return fmt.Errorf("writing BASE: %w", err)
+			}
+
+			// Generate and write cloud-init.yaml
+			cloudInit, err := instance.DefaultCloudInit()
+			if err != nil {
+				return fmt.Errorf("generating cloud-init: %w", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "cloud-init.yaml"), []byte(cloudInit), 0644); err != nil {
+				return fmt.Errorf("writing cloud-init.yaml: %w", err)
+			}
+
+			// Create starter layer
+			layerDir := filepath.Join(dir, "layers", "10-base")
+			if err := os.MkdirAll(layerDir, 0755); err != nil {
+				return fmt.Errorf("creating layer directory: %w", err)
+			}
+			installScript := "#!/bin/bash\nset -e\n\n# Add your base provisioning here\n"
+			if err := os.WriteFile(filepath.Join(layerDir, "install.sh"), []byte(installScript), 0755); err != nil {
+				return fmt.Errorf("writing install.sh: %w", err)
+			}
+
+			fmt.Printf("Initialized project in %s\n", dir)
+			fmt.Printf("  BASE: %s\n", baseURL)
+			fmt.Println("  cloud-init.yaml: generated with current user + SSH key")
+			fmt.Println("  layers/10-base/install.sh: starter script")
+			return nil
+		},
+	}
+	initCmd.Flags().StringVarP(&initProjectPath, "project", "p", ".", "path to project directory")
+
 	var projectPath string
 	layersCmd := &cobra.Command{
 		Use:   "layers",
@@ -119,6 +167,10 @@ func main() {
 				return fmt.Errorf("loading project: %w", err)
 			}
 
+			if p.CloudInit == "" {
+				return fmt.Errorf("no cloud-init.yaml found in project directory (run 'gi init' to create one)")
+			}
+
 			// Determine instance name
 			instanceName := filepath.Base(p.Root)
 			if len(args) > 0 {
@@ -162,19 +214,9 @@ func main() {
 			}
 			fmt.Printf("Build ready: %s\n\n", buildImagePath)
 
-			// Determine cloud-init config
-			cloudInit := p.CloudInit
-			if cloudInit == "" {
-				fmt.Println("No cloud-init.yaml found, generating default (user + SSH key)...")
-				cloudInit, err = instance.DefaultCloudInit()
-				if err != nil {
-					return fmt.Errorf("generating default cloud-init: %w", err)
-				}
-			}
-
 			// Create instance
 			fmt.Printf("Creating instance %q...\n", instanceName)
-			inst, err := instance.Create(instanceName, buildImagePath, cloudInit, os.Stdout)
+			inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("creating instance: %w", err)
 			}
@@ -254,6 +296,7 @@ func main() {
 	destroyCmd.Flags().StringVarP(&destroyProjectPath, "project", "p", ".", "path to project directory")
 
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(layersCmd)
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(startCmd)
