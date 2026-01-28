@@ -25,6 +25,13 @@ func hashLayer(layerPath string) (string, error) {
 		h.Write(content)
 	}
 
+	// Hash firstboot.sh if it exists
+	firstbootPath := filepath.Join(layerPath, "firstboot.sh")
+	if content, err := os.ReadFile(firstbootPath); err == nil {
+		h.Write([]byte("script:firstboot.sh\n"))
+		h.Write(content)
+	}
+
 	// Hash files/ directory contents
 	filesPath := filepath.Join(layerPath, "files")
 	if _, err := os.Stat(filesPath); err == nil {

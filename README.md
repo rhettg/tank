@@ -80,6 +80,7 @@ Layers are directories under `layers/`.
 Each layer may contain:
 
 * `install.sh` — executed during image build
+* `firstboot.sh` — executed on first VM boot
 * `files/` — filesystem overlay copied verbatim
 
 Example:
@@ -118,6 +119,7 @@ Graystone requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM m
 
 - `libvirt`
 - `qemu-full` (or equivalent)
+- `guestfs-tools` (provides `virt-customize` for applying layers)
 - `genisoimage` (for cloud-init ISOs)
 
 ### Groups

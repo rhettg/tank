@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -228,6 +229,129 @@ func CreateBuildImage(baseImagePath, projectHash string, progress io.Writer) (st
 	return destPath, nil
 }
 
+// ApplyLayers applies project layers to a build image using virt-customize.
+// Each layer is applied in a separate virt-customize invocation for clear
+// error attribution and progress reporting.
+func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) error {
+	for _, layer := range layers {
+		args := []string{"-a", imagePath}
+
+		// Copy files first so scripts can reference them
+		if layer.HasFiles {
+			filesDir := filepath.Join(layer.Path, "files")
+			entries, err := os.ReadDir(filesDir)
+			if err != nil {
+				return fmt.Errorf("reading files dir for layer %s: %w", layer.Name, err)
+			}
+			for _, entry := range entries {
+				src := filepath.Join(filesDir, entry.Name())
+				args = append(args, "--copy-in", src+":/")
+			}
+		}
+
+		// Run install.sh
+		if layer.HasScript {
+			args = append(args, "--run", filepath.Join(layer.Path, "install.sh"))
+		}
+
+		// Register firstboot.sh
+		if layer.HasFirstboot {
+			args = append(args, "--firstboot", filepath.Join(layer.Path, "firstboot.sh"))
+		}
+
+		// Skip if nothing to do (only -a flag)
+		if len(args) <= 2 {
+			continue
+		}
+
+		fmt.Fprintf(progress, "  Applying layer %s...\n", layer.Name)
+
+		cmd := exec.Command("virt-customize", args...)
+		cmd.Stdout = progress
+		cmd.Stderr = progress
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("applying layer %s: %w", layer.Name, err)
+		}
+	}
+	return nil
+}
+
+// Build runs the full build pipeline: download base image, copy to build image,
+// apply layers. Returns the path to the final build image.
+// If the build image already exists (cached), it returns early.
+func Build(p *project.Project, progress io.Writer) (string, error) {
+	projectHash := p.Hash()
+
+	// Check cache
+	destPath, err := BuildImagePath(projectHash)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(destPath); err == nil {
+		fmt.Fprintf(progress, "Build cached: %s\n", destPath)
+		return destPath, nil
+	}
+
+	// Download base image
+	fmt.Fprintln(progress, "Downloading base image...")
+	baseImagePath, err := DownloadBaseImage(p.Base, progress)
+	if err != nil {
+		return "", fmt.Errorf("downloading base image: %w", err)
+	}
+	fmt.Fprintf(progress, "Base image ready: %s\n\n", baseImagePath)
+
+	// Create builds directory
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return "", err
+	}
+
+	// Copy base to temp build image
+	fmt.Fprintf(progress, "Creating build image (project hash: %s)...\n", projectHash[:8])
+	tmpPath := destPath + ".tmp"
+
+	src, err := os.Open(baseImagePath)
+	if err != nil {
+		return "", err
+	}
+	srcInfo, err := src.Stat()
+	if err != nil {
+		src.Close()
+		return "", err
+	}
+
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		src.Close()
+		return "", err
+	}
+
+	_, err = copyWithProgress(dst, src, srcInfo.Size(), progress)
+	dst.Close()
+	src.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	// Apply layers
+	if len(p.Layers) > 0 {
+		fmt.Fprintln(progress, "\nApplying layers...")
+		if err := ApplyLayers(tmpPath, p.Layers, progress); err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return "", err
+	}
+
+	return destPath, nil
+}
+
 // PrintPlan prints the build plan for dry-run output.
 func PrintPlan(w io.Writer, p *project.Project) error {
 	fmt.Fprintf(w, "Build Plan for: %s\n", p.Root)
@@ -262,6 +386,11 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 		// Note if script would run
 		if layer.HasScript {
 			fmt.Fprintf(w, "      - Run install.sh\n")
+		}
+
+		// Note if firstboot script would run
+		if layer.HasFirstboot {
+			fmt.Fprintf(w, "      - Run firstboot.sh (on first boot)\n")
 		}
 
 		fmt.Fprintln(w)

@@ -134,20 +134,9 @@ func main() {
 				return build.PrintPlan(os.Stdout, p)
 			}
 
-			// Download base image
-			fmt.Println("Downloading base image...")
-			baseImagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
+			buildImagePath, err := build.Build(p, os.Stdout)
 			if err != nil {
-				return fmt.Errorf("downloading base image: %w", err)
-			}
-			fmt.Printf("Base image ready: %s\n\n", baseImagePath)
-
-			// Create build image
-			projectHash := p.Hash()
-			fmt.Printf("Creating build image (project hash: %s)...\n", projectHash[:8])
-			buildImagePath, err := build.CreateBuildImage(baseImagePath, projectHash, os.Stdout)
-			if err != nil {
-				return fmt.Errorf("creating build image: %w", err)
+				return fmt.Errorf("build: %w", err)
 			}
 			fmt.Printf("Build image ready: %s\n", buildImagePath)
 
@@ -204,16 +193,9 @@ func main() {
 			}
 
 			// Build image if needed
-			fmt.Println("Building image...")
-			baseImagePath, err := build.DownloadBaseImage(p.Base, os.Stdout)
+			buildImagePath, err := build.Build(p, os.Stdout)
 			if err != nil {
-				return fmt.Errorf("downloading base image: %w", err)
-			}
-
-			projectHash := p.Hash()
-			buildImagePath, err := build.CreateBuildImage(baseImagePath, projectHash, os.Stdout)
-			if err != nil {
-				return fmt.Errorf("creating build image: %w", err)
+				return fmt.Errorf("build: %w", err)
 			}
 			fmt.Printf("Build ready: %s\n\n", buildImagePath)
 

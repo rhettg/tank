@@ -11,11 +11,12 @@ import (
 
 // Layer represents a single layer in the project.
 type Layer struct {
-	Name        string // "10-common"
-	Path        string // Full path to layer directory
-	HasScript   bool   // install.sh exists
-	HasFiles    bool   // files/ directory exists
-	ContentHash string // SHA256 of layer contents
+	Name         string // "10-common"
+	Path         string // Full path to layer directory
+	HasScript    bool   // install.sh exists
+	HasFiles     bool   // files/ directory exists
+	HasFirstboot bool   // firstboot.sh exists
+	ContentHash  string // SHA256 of layer contents
 }
 
 // Project represents a graystone project.
@@ -98,6 +99,12 @@ func Load(path string) (*Project, error) {
 		scriptPath := filepath.Join(layerPath, "install.sh")
 		if _, err := os.Stat(scriptPath); err == nil {
 			layer.HasScript = true
+		}
+
+		// Check for firstboot.sh
+		firstbootPath := filepath.Join(layerPath, "firstboot.sh")
+		if _, err := os.Stat(firstbootPath); err == nil {
+			layer.HasFirstboot = true
 		}
 
 		// Check for files/ directory

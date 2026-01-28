@@ -23,9 +23,4 @@ go test ./...
 - No external config files - filesystem is the interface
 
 ## Graystone Project Layout
-A graystone project directory contains:
-- `BASE` - URL to base cloud image
-- `layers/` - Numbered directories (e.g., `10-common/`, `20-devtools/`)
-  - `install.sh` - Optional provisioning script
-  - `files/` - Optional file overlay (copied to VM root)
-- `cloud-init.yaml` - Optional cloud-init configuration
+See README.md for project layout, prerequisites, and storage model.

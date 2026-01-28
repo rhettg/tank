@@ -30,13 +30,14 @@ func TestLoad(t *testing.T) {
 
 	// Check layer order and properties
 	tests := []struct {
-		name      string
-		hasScript bool
-		hasFiles  bool
+		name         string
+		hasScript    bool
+		hasFiles     bool
+		hasFirstboot bool
 	}{
-		{"10-common", true, true},
-		{"20-devtools", true, false},
-		{"90-project", false, true},
+		{"10-common", true, true, false},
+		{"20-devtools", true, false, false},
+		{"90-project", false, true, false},
 	}
 
 	for i, tt := range tests {
@@ -49,6 +50,9 @@ func TestLoad(t *testing.T) {
 		}
 		if layer.HasFiles != tt.hasFiles {
 			t.Errorf("layer[%d].HasFiles = %v, want %v", i, layer.HasFiles, tt.hasFiles)
+		}
+		if layer.HasFirstboot != tt.hasFirstboot {
+			t.Errorf("layer[%d].HasFirstboot = %v, want %v", i, layer.HasFirstboot, tt.hasFirstboot)
 		}
 		if layer.ContentHash == "" {
 			t.Errorf("layer[%d].ContentHash should not be empty", i)
