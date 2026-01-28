@@ -28,6 +28,64 @@ func resolveInstanceName(projectPath string, args []string) (string, error) {
 	return filepath.Base(p.Root), nil
 }
 
+// ensureRunning makes sure the named instance is built, created, and running.
+func ensureRunning(projectPath string, instanceName string, cpus int, memory int) error {
+	p, err := project.Load(projectPath)
+	if err != nil {
+		return fmt.Errorf("loading project: %w", err)
+	}
+
+	if p.CloudInit == "" {
+		return fmt.Errorf("no cloud-init.yaml found in project directory (run 'gi init' to create one)")
+	}
+
+	if instanceName == "" {
+		instanceName = filepath.Base(p.Root)
+	}
+
+	// Check if instance already exists
+	if instance.Exists(instanceName) {
+		inst, err := instance.Load(instanceName)
+		if err != nil {
+			return fmt.Errorf("loading instance: %w", err)
+		}
+		if inst.IsRunning() {
+			fmt.Printf("Instance %q is already running.\n", instanceName)
+			return nil
+		}
+		// Instance exists but not running - start it
+		fmt.Printf("Starting existing instance %q...\n", instanceName)
+		cmd := exec.Command("virsh", "-c", "qemu:///system", "start", inst.Domain)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("starting VM: %w: %s", err, output)
+		}
+		fmt.Printf("Instance %q started.\n", instanceName)
+		return nil
+	}
+
+	// Build image if needed
+	buildImagePath, err := build.Build(p, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("build: %w", err)
+	}
+	fmt.Printf("Build ready: %s\n\n", buildImagePath)
+
+	// Create instance
+	fmt.Printf("Creating instance %q...\n", instanceName)
+	inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
+	if err != nil {
+		return fmt.Errorf("creating instance: %w", err)
+	}
+
+	// Start VM
+	if err := inst.Start(cpus, memory, os.Stdout); err != nil {
+		return fmt.Errorf("starting VM: %w", err)
+	}
+
+	fmt.Printf("\nInstance %q started.\n", instanceName)
+	return nil
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "gi",
@@ -154,66 +212,11 @@ func main() {
 		Short: "Build image (if needed) and start the VM",
 		Long:  "Start a VM instance. Default name is the project directory name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := project.Load(startProjectPath)
-			if err != nil {
-				return fmt.Errorf("loading project: %w", err)
-			}
-
-			if p.CloudInit == "" {
-				return fmt.Errorf("no cloud-init.yaml found in project directory (run 'gi init' to create one)")
-			}
-
-			// Determine instance name
-			instanceName := filepath.Base(p.Root)
+			instanceName := ""
 			if len(args) > 0 {
 				instanceName = args[0]
 			}
-
-			// Check if instance already exists
-			if instance.Exists(instanceName) {
-				// Load and check if running
-				inst, err := instance.Load(instanceName)
-				if err != nil {
-					return fmt.Errorf("loading instance: %w", err)
-				}
-				if inst.IsRunning() {
-					fmt.Printf("Instance %q is already running.\n", instanceName)
-					fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
-					return nil
-				}
-				// Instance exists but not running - start it
-				fmt.Printf("Starting existing instance %q...\n", instanceName)
-				cmd := exec.Command("virsh", "-c", "qemu:///system", "start", inst.Domain)
-				if output, err := cmd.CombinedOutput(); err != nil {
-					return fmt.Errorf("starting VM: %w: %s", err, output)
-				}
-				fmt.Printf("Instance %q started.\n", instanceName)
-				fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
-				return nil
-			}
-
-			// Build image if needed
-			buildImagePath, err := build.Build(p, os.Stdout)
-			if err != nil {
-				return fmt.Errorf("build: %w", err)
-			}
-			fmt.Printf("Build ready: %s\n\n", buildImagePath)
-
-			// Create instance
-			fmt.Printf("Creating instance %q...\n", instanceName)
-			inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
-			if err != nil {
-				return fmt.Errorf("creating instance: %w", err)
-			}
-
-			// Start VM
-			if err := inst.Start(startCPUs, startMemory, os.Stdout); err != nil {
-				return fmt.Errorf("starting VM: %w", err)
-			}
-
-			fmt.Printf("\nInstance %q started.\n", instanceName)
-			fmt.Printf("  Connect with: virsh -c qemu:///system console %s\n", inst.Domain)
-			return nil
+			return ensureRunning(startProjectPath, instanceName, startCPUs, startMemory)
 		},
 	}
 	startCmd.Flags().StringVarP(&startProjectPath, "project", "p", ".", "path to project directory")
@@ -283,8 +286,8 @@ func main() {
 	var sshProjectPath string
 	sshCmd := &cobra.Command{
 		Use:   "ssh [name] [-- ssh_args...]",
-		Short: "SSH into a running VM",
-		Long:  "Connect to a running VM instance via SSH. Default name is the project directory name.",
+		Short: "SSH into a running VM (auto-starts if needed)",
+		Long:  "Connect to a VM instance via SSH, building and starting it if necessary. Default name is the project directory name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Split args at -- into instance name args and SSH args
 			var nameArgs, extraSSHArgs []string
@@ -302,13 +305,14 @@ func main() {
 				return err
 			}
 
-			inst, err := instance.Load(instanceName)
-			if err != nil {
-				return fmt.Errorf("loading instance: %w\n\nIs the instance created? Run 'gi start' first.", err)
+			// Ensure instance is running (build/create/start as needed)
+			if err := ensureRunning(sshProjectPath, instanceName, 2, 4096); err != nil {
+				return err
 			}
 
-			if !inst.IsRunning() {
-				return fmt.Errorf("instance %q is not running (run 'gi start' first)", instanceName)
+			inst, err := instance.Load(instanceName)
+			if err != nil {
+				return fmt.Errorf("loading instance: %w", err)
 			}
 
 			// Get current username (matches cloud-init user)
@@ -349,14 +353,44 @@ func main() {
 			// Append any extra args passed after --
 			sshArgs = append(sshArgs, extraSSHArgs...)
 
-			sshCmd := exec.Command("ssh", sshArgs...)
-			sshCmd.Stdin = os.Stdin
-			sshCmd.Stdout = os.Stdout
-			sshCmd.Stderr = os.Stderr
+			// Wait for SSH to become available by probing quietly
+			sshReady := false
+			for attempt := 0; attempt < 30; attempt++ {
+				probe := exec.Command("ssh", append(sshArgs, "true")...)
+				if output, err := probe.CombinedOutput(); err != nil {
+					var exitErr *exec.ExitError
+					if errors.As(err, &exitErr) && exitErr.ExitCode() == 255 {
+						if attempt == 0 {
+							fmt.Fprintf(os.Stderr, "Waiting for SSH to become available...")
+						} else {
+							fmt.Fprintf(os.Stderr, ".")
+						}
+						time.Sleep(2 * time.Second)
+						continue
+					}
+					// Non-connection error (e.g. auth failure)
+					fmt.Fprintf(os.Stderr, "%s", output)
+					return fmt.Errorf("SSH failed: %w", err)
+				}
+				// Probe succeeded — SSH is ready
+				if attempt > 0 {
+					fmt.Fprintf(os.Stderr, "\n")
+				}
+				sshReady = true
+				break
+			}
+			if !sshReady {
+				fmt.Fprintf(os.Stderr, "\n")
+				return fmt.Errorf("timed out waiting for SSH connection")
+			}
 
-			if err := sshCmd.Run(); err != nil {
-				// If SSH exited with a non-zero status, propagate the exit code
-				// without printing cobra's usage text.
+			// Run the real interactive SSH session
+			sshExec := exec.Command("ssh", sshArgs...)
+			sshExec.Stdin = os.Stdin
+			sshExec.Stdout = os.Stdout
+			sshExec.Stderr = os.Stderr
+
+			if err := sshExec.Run(); err != nil {
 				var exitErr *exec.ExitError
 				if errors.As(err, &exitErr) {
 					os.Exit(exitErr.ExitCode())
