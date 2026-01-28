@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rhettg/graystone/build"
+	"github.com/rhettg/graystone/ui"
 )
 
 // DefaultCloudInit generates a cloud-init config that creates a user matching
@@ -117,7 +118,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 	}
 
 	// Create COW overlay disk backed by build image
-	fmt.Fprintf(progress, "  Creating overlay disk...\n")
+	ui.PrintStep(progress, "Creating overlay disk")
 	if err := createOverlayDisk(inst.DiskPath, buildImagePath); err != nil {
 		os.RemoveAll(dir)
 		return nil, fmt.Errorf("creating overlay disk: %w", err)
@@ -125,7 +126,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 
 	// Create cloud-init ISO if we have cloud-init config
 	if cloudInitYAML != "" {
-		fmt.Fprintf(progress, "  Creating cloud-init ISO...\n")
+		ui.PrintStep(progress, "Creating cloud-init ISO")
 		if err := createCloudInitISO(inst.ISOPath, cloudInitYAML, name); err != nil {
 			os.RemoveAll(dir)
 			return nil, fmt.Errorf("creating cloud-init ISO: %w", err)
@@ -134,7 +135,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 		inst.ISOPath = ""
 	}
 
-	fmt.Fprintf(progress, "  Instance directory: %s\n", dir)
+	ui.PrintStep(progress, "Instance directory: %s", ui.MutedStyle.Render(dir))
 	return inst, nil
 }
 
@@ -237,7 +238,7 @@ ethernets:
 
 // Start starts the VM using virt-install.
 func (inst *Instance) Start(cpus, memoryMB int, progress io.Writer) error {
-	fmt.Fprintf(progress, "  Starting VM %s...\n", inst.Domain)
+	ui.PrintStep(progress, "Starting VM %s", ui.Bold.Render(inst.Domain))
 
 	args := []string{
 		"--connect", "qemu:///system",
@@ -331,7 +332,7 @@ func (inst *Instance) IsRunning() bool {
 
 // Stop stops the VM (graceful shutdown).
 func (inst *Instance) Stop(progress io.Writer) error {
-	fmt.Fprintf(progress, "  Stopping VM %s...\n", inst.Domain)
+	ui.PrintStep(progress, "Stopping VM %s", ui.Bold.Render(inst.Domain))
 	cmd := exec.Command("virsh", "-c", "qemu:///system", "shutdown", inst.Domain)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -344,18 +345,18 @@ func (inst *Instance) Stop(progress io.Writer) error {
 func (inst *Instance) Destroy(progress io.Writer) error {
 	// Force stop if running
 	if inst.IsRunning() {
-		fmt.Fprintf(progress, "  Force stopping VM %s...\n", inst.Domain)
+		ui.PrintStep(progress, "Force stopping VM %s", ui.Bold.Render(inst.Domain))
 		cmd := exec.Command("virsh", "-c", "qemu:///system", "destroy", inst.Domain)
 		cmd.Run() // Ignore error if not running
 	}
 
 	// Undefine the domain
-	fmt.Fprintf(progress, "  Removing VM definition...\n")
+	ui.PrintStep(progress, "Removing VM definition")
 	cmd := exec.Command("virsh", "-c", "qemu:///system", "undefine", inst.Domain)
 	cmd.Run() // Ignore error if not defined
 
 	// Remove instance directory
-	fmt.Fprintf(progress, "  Removing instance files...\n")
+	ui.PrintStep(progress, "Removing instance files")
 	if err := os.RemoveAll(inst.Dir); err != nil {
 		return fmt.Errorf("removing instance directory: %w", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/rhettg/graystone/build"
 	"github.com/rhettg/graystone/instance"
 	"github.com/rhettg/graystone/project"
+	"github.com/rhettg/graystone/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -50,16 +51,16 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 			return fmt.Errorf("loading instance: %w", err)
 		}
 		if inst.IsRunning() {
-			fmt.Printf("Instance %q is already running.\n", instanceName)
+			ui.PrintInfo(os.Stdout, "Instance %s is already running", ui.Bold.Render(instanceName))
 			return nil
 		}
 		// Instance exists but not running - start it
-		fmt.Printf("Starting existing instance %q...\n", instanceName)
+		ui.PrintInfo(os.Stdout, "Starting existing instance %s", ui.Bold.Render(instanceName))
 		cmd := exec.Command("virsh", "-c", "qemu:///system", "start", inst.Domain)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("starting VM: %w: %s", err, output)
 		}
-		fmt.Printf("Instance %q started.\n", instanceName)
+		ui.PrintSuccess(os.Stdout, "Instance %s started", ui.Bold.Render(instanceName))
 		return nil
 	}
 
@@ -68,10 +69,11 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 	if err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
-	fmt.Printf("Build ready: %s\n\n", buildImagePath)
+	ui.PrintStep(os.Stdout, "Build ready: %s", ui.MutedStyle.Render(buildImagePath))
+	fmt.Println()
 
 	// Create instance
-	fmt.Printf("Creating instance %q...\n", instanceName)
+	ui.PrintInfo(os.Stdout, "Creating instance %s", ui.Bold.Render(instanceName))
 	inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
 	if err != nil {
 		return fmt.Errorf("creating instance: %w", err)
@@ -82,14 +84,15 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		return fmt.Errorf("starting VM: %w", err)
 	}
 
-	fmt.Printf("\nInstance %q started.\n", instanceName)
+	fmt.Println()
+	ui.PrintSuccess(os.Stdout, "Instance %s started", ui.Bold.Render(instanceName))
 	return nil
 }
 
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "gi",
-		Short: "Graystone Industries - deterministic VM images",
+		Short: ui.Title.Render("Graystone Industries") + " — deterministic VM images",
 		Long:  "Build and run disposable virtual machines using libvirt and KVM.",
 	}
 
@@ -97,7 +100,7 @@ func main() {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("gi version %s\n", getVersion())
+			fmt.Printf("%s %s\n", ui.Bold.Render("gi"), ui.Highlight.Render(getVersion()))
 		},
 	}
 
@@ -140,10 +143,10 @@ func main() {
 				return fmt.Errorf("writing install.sh: %w", err)
 			}
 
-			fmt.Printf("Initialized project in %s\n", dir)
-			fmt.Printf("  BASE: %s\n", baseURL)
-			fmt.Println("  cloud-init.yaml: generated with current user + SSH key")
-			fmt.Println("  layers/10-base/install.sh: starter script")
+			ui.PrintSuccess(os.Stdout, "Initialized project in %s", dir)
+			ui.PrintStep(os.Stdout, "BASE: %s", baseURL)
+			ui.PrintStep(os.Stdout, "cloud-init.yaml: generated with current user + SSH key")
+			ui.PrintStep(os.Stdout, "layers/10-base/install.sh: starter script")
 			return nil
 		},
 	}
@@ -159,19 +162,16 @@ func main() {
 				return fmt.Errorf("loading project: %w", err)
 			}
 
-			fmt.Printf("Base: %s\n", p.Base)
-			fmt.Println("Layers:")
-			for _, layer := range p.Layers {
-				script := "       "
-				if layer.HasScript {
-					script = "[script]"
+			rows := make([]ui.LayerRow, len(p.Layers))
+			for i, layer := range p.Layers {
+				rows[i] = ui.LayerRow{
+					Name:   layer.Name,
+					Script: layer.HasScript,
+					Files:  layer.HasFiles,
+					Hash:   layer.ContentHash,
 				}
-				files := "       "
-				if layer.HasFiles {
-					files = "[files]"
-				}
-				fmt.Printf("  %-14s %s %s  %s\n", layer.Name, script, files, layer.ContentHash[:8])
 			}
+			fmt.Println(ui.RenderLayerTable(p.Base, rows))
 			return nil
 		},
 	}
@@ -241,7 +241,7 @@ func main() {
 			}
 
 			if !inst.IsRunning() {
-				fmt.Printf("Instance %q is not running.\n", instanceName)
+				ui.PrintInfo(os.Stdout, "Instance %s is not running", ui.Bold.Render(instanceName))
 				return nil
 			}
 
@@ -249,7 +249,7 @@ func main() {
 				return fmt.Errorf("stopping VM: %w", err)
 			}
 
-			fmt.Printf("Instance %q stopping.\n", instanceName)
+			ui.PrintSuccess(os.Stdout, "Instance %s stopping", ui.Bold.Render(instanceName))
 			return nil
 		},
 	}
@@ -272,12 +272,12 @@ func main() {
 				return fmt.Errorf("loading instance: %w", err)
 			}
 
-			fmt.Printf("Destroying instance %q...\n", instanceName)
+			ui.PrintInfo(os.Stdout, "Destroying instance %s", ui.Bold.Render(instanceName))
 			if err := inst.Destroy(os.Stdout); err != nil {
 				return fmt.Errorf("destroying instance: %w", err)
 			}
 
-			fmt.Printf("Instance %q destroyed.\n", instanceName)
+			ui.PrintSuccess(os.Stdout, "Instance %s destroyed", ui.Bold.Render(instanceName))
 			return nil
 		},
 	}
@@ -402,6 +402,64 @@ func main() {
 	}
 	sshCmd.Flags().StringVarP(&sshProjectPath, "project", "p", ".", "path to project directory")
 
+	listCmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls", "ps"},
+		Short:   "List all VM instances",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cacheDir, err := build.CacheDir()
+			if err != nil {
+				return err
+			}
+
+			instancesDir := filepath.Join(cacheDir, "instances")
+			entries, err := os.ReadDir(instancesDir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Println(ui.MutedStyle.Render("No instances found"))
+					return nil
+				}
+				return err
+			}
+
+			var rows []ui.InstanceRow
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+
+				name := entry.Name()
+				inst, err := instance.Load(name)
+				if err != nil {
+					continue
+				}
+
+				status := ui.FormatStatus(inst.IsRunning())
+
+				ip := "-"
+				if inst.IsRunning() {
+					if addr, err := inst.IPAddress(); err == nil && addr != "" {
+						ip = addr
+					}
+				}
+
+				rows = append(rows, ui.InstanceRow{
+					Name:   name,
+					Status: status,
+					IP:     ip,
+				})
+			}
+
+			if len(rows) == 0 {
+				fmt.Println(ui.MutedStyle.Render("No instances found"))
+				return nil
+			}
+
+			fmt.Println(ui.RenderInstanceTable(rows))
+			return nil
+		},
+	}
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(layersCmd)
@@ -410,6 +468,7 @@ func main() {
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(sshCmd)
+	rootCmd.AddCommand(listCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
