@@ -1,0 +1,4 @@
+#!/bin/bash
+# Example preboot hook for testing
+echo "Preboot hook running for instance: $GI_INSTANCE_NAME"
+echo "# Added by preboot hook" >> "$GI_CLOUD_INIT"

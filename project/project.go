@@ -16,6 +16,7 @@ type Layer struct {
 	HasScript    bool   // install.sh exists
 	HasFiles     bool   // files/ directory exists
 	HasFirstboot bool   // firstboot.sh exists
+	HasPreboot   bool   // preboot exists (host-side hook)
 	ContentHash  string // SHA256 of layer contents
 }
 
@@ -85,11 +86,13 @@ func Load(path string) (*Project, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		layerPath := filepath.Join(layersDir, entry.Name())
+
+		// Use os.Stat to follow symlinks
+		info, err := os.Stat(layerPath)
+		if err != nil || !info.IsDir() {
 			continue
 		}
-
-		layerPath := filepath.Join(layersDir, entry.Name())
 		layer := Layer{
 			Name: entry.Name(),
 			Path: layerPath,
@@ -105,6 +108,12 @@ func Load(path string) (*Project, error) {
 		firstbootPath := filepath.Join(layerPath, "firstboot.sh")
 		if _, err := os.Stat(firstbootPath); err == nil {
 			layer.HasFirstboot = true
+		}
+
+		// Check for preboot (host-side hook)
+		prebootPath := filepath.Join(layerPath, "preboot")
+		if _, err := os.Stat(prebootPath); err == nil {
+			layer.HasPreboot = true
 		}
 
 		// Check for files/ directory

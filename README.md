@@ -79,6 +79,7 @@ Layers are directories under `layers/`.
 
 Each layer may contain:
 
+* `preboot` — executed on the host before instance creation (can edit cloud-init)
 * `install.sh` — executed during image build
 * `firstboot.sh` — executed on first VM boot
 * `files/` — filesystem overlay copied verbatim
@@ -191,6 +192,22 @@ Cloud-init is supported **only for first-boot identity**:
 * SSH keys
 * hostnames
 * per-instance users
+
+Layers can also include a `preboot` host hook to edit the generated cloud-init
+before the VM boots (for example, to inject short-lived secrets).
+
+### Preboot hooks
+
+The `preboot` script runs on the host before instance creation. It receives:
+
+- `GI_PROJECT_ROOT` — absolute path to project root
+- `GI_INSTANCE_NAME` — resolved instance name
+- `GI_LAYER_PATH` — absolute path to the current layer
+- `GI_CLOUD_INIT` — writable path to the cloud-init user-data file
+- `GI_WORK_DIR` — temporary directory for hook scratch files
+
+Hooks run in layer order and can edit `GI_CLOUD_INIT` in place. If a hook exits
+non-zero, `gi start` aborts with an error.
 
 Images remain reusable.
 Instances remain unique.

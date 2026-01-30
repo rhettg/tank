@@ -1,0 +1,245 @@
+package instance
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/rhettg/graystone/project"
+)
+
+func TestRunPrebootHooks(t *testing.T) {
+	// Create a temp project with a preboot hook
+	tmpDir := t.TempDir()
+
+	// Create BASE
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("test-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a layer with preboot
+	layerDir := filepath.Join(tmpDir, "layers", "10-test")
+	if err := os.MkdirAll(layerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create preboot script that appends to cloud-init
+	prebootScript := `#!/bin/bash
+echo "# Added by preboot: $GI_INSTANCE_NAME" >> "$GI_CLOUD_INIT"
+`
+	if err := os.WriteFile(filepath.Join(layerDir, "preboot"), []byte(prebootScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load project
+	p, err := project.Load(tmpDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Create temp cloud-init file
+	cloudInitFile, err := os.CreateTemp("", "cloud-init-test-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(cloudInitFile.Name())
+
+	initialContent := "#cloud-config\nusers: []\n"
+	if _, err := cloudInitFile.WriteString(initialContent); err != nil {
+		t.Fatal(err)
+	}
+	cloudInitFile.Close()
+
+	// Run preboot hooks
+	var output bytes.Buffer
+	if err := RunPrebootHooks(p, "test-instance", cloudInitFile.Name(), &output); err != nil {
+		t.Fatalf("RunPrebootHooks failed: %v", err)
+	}
+
+	// Read modified cloud-init
+	modifiedContent, err := os.ReadFile(cloudInitFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that preboot hook modified the file
+	if !strings.Contains(string(modifiedContent), "# Added by preboot: test-instance") {
+		t.Errorf("preboot hook did not modify cloud-init, got:\n%s", modifiedContent)
+	}
+}
+
+func TestRunPrebootHooksOrder(t *testing.T) {
+	// Create a temp project with multiple preboot hooks
+	tmpDir := t.TempDir()
+
+	// Create BASE
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("test-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create first layer
+	layer1Dir := filepath.Join(tmpDir, "layers", "10-first")
+	if err := os.MkdirAll(layer1Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layer1Dir, "preboot"), []byte("#!/bin/bash\necho 'first' >> \"$GI_CLOUD_INIT\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create second layer
+	layer2Dir := filepath.Join(tmpDir, "layers", "20-second")
+	if err := os.MkdirAll(layer2Dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layer2Dir, "preboot"), []byte("#!/bin/bash\necho 'second' >> \"$GI_CLOUD_INIT\"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load project
+	p, err := project.Load(tmpDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Create temp cloud-init file
+	cloudInitFile, err := os.CreateTemp("", "cloud-init-test-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(cloudInitFile.Name())
+	cloudInitFile.Close()
+
+	// Run preboot hooks
+	var output bytes.Buffer
+	if err := RunPrebootHooks(p, "test-instance", cloudInitFile.Name(), &output); err != nil {
+		t.Fatalf("RunPrebootHooks failed: %v", err)
+	}
+
+	// Read modified cloud-init
+	modifiedContent, err := os.ReadFile(cloudInitFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check order: first should appear before second
+	content := string(modifiedContent)
+	firstIdx := strings.Index(content, "first")
+	secondIdx := strings.Index(content, "second")
+
+	if firstIdx == -1 || secondIdx == -1 {
+		t.Errorf("expected both 'first' and 'second' in output, got:\n%s", content)
+	}
+	if firstIdx > secondIdx {
+		t.Errorf("hooks ran in wrong order, got:\n%s", content)
+	}
+}
+
+func TestRunPrebootHooksFailure(t *testing.T) {
+	// Create a temp project with a failing preboot hook
+	tmpDir := t.TempDir()
+
+	// Create BASE
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("test-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a layer with failing preboot
+	layerDir := filepath.Join(tmpDir, "layers", "10-test")
+	if err := os.MkdirAll(layerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(layerDir, "preboot"), []byte("#!/bin/bash\nexit 1\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load project
+	p, err := project.Load(tmpDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Create temp cloud-init file
+	cloudInitFile, err := os.CreateTemp("", "cloud-init-test-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(cloudInitFile.Name())
+	cloudInitFile.Close()
+
+	// Run preboot hooks - should fail
+	var output bytes.Buffer
+	err = RunPrebootHooks(p, "test-instance", cloudInitFile.Name(), &output)
+	if err == nil {
+		t.Error("expected error from failing preboot hook")
+	}
+}
+
+func TestRunPrebootHooksEnvVars(t *testing.T) {
+	// Create a temp project with a preboot hook that outputs env vars
+	tmpDir := t.TempDir()
+
+	// Create BASE
+	if err := os.WriteFile(filepath.Join(tmpDir, "BASE"), []byte("test-base\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a layer with preboot that writes env vars to cloud-init
+	layerDir := filepath.Join(tmpDir, "layers", "10-test")
+	if err := os.MkdirAll(layerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	prebootScript := `#!/bin/bash
+echo "PROJECT_ROOT=$GI_PROJECT_ROOT" >> "$GI_CLOUD_INIT"
+echo "INSTANCE_NAME=$GI_INSTANCE_NAME" >> "$GI_CLOUD_INIT"
+echo "LAYER_PATH=$GI_LAYER_PATH" >> "$GI_CLOUD_INIT"
+echo "WORK_DIR=$GI_WORK_DIR" >> "$GI_CLOUD_INIT"
+# Verify work dir exists
+test -d "$GI_WORK_DIR" || exit 1
+`
+	if err := os.WriteFile(filepath.Join(layerDir, "preboot"), []byte(prebootScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load project
+	p, err := project.Load(tmpDir)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Create temp cloud-init file
+	cloudInitFile, err := os.CreateTemp("", "cloud-init-test-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(cloudInitFile.Name())
+	cloudInitFile.Close()
+
+	// Run preboot hooks
+	var output bytes.Buffer
+	if err := RunPrebootHooks(p, "my-instance", cloudInitFile.Name(), &output); err != nil {
+		t.Fatalf("RunPrebootHooks failed: %v", err)
+	}
+
+	// Read modified cloud-init
+	modifiedContent, err := os.ReadFile(cloudInitFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(modifiedContent)
+
+	// Check env vars were set correctly
+	if !strings.Contains(content, "PROJECT_ROOT="+p.Root) {
+		t.Errorf("GI_PROJECT_ROOT not set correctly, got:\n%s", content)
+	}
+	if !strings.Contains(content, "INSTANCE_NAME=my-instance") {
+		t.Errorf("GI_INSTANCE_NAME not set correctly, got:\n%s", content)
+	}
+	if !strings.Contains(content, "LAYER_PATH="+layerDir) {
+		t.Errorf("GI_LAYER_PATH not set correctly, got:\n%s", content)
+	}
+	if !strings.Contains(content, "WORK_DIR=/") {
+		t.Errorf("GI_WORK_DIR not set, got:\n%s", content)
+	}
+}

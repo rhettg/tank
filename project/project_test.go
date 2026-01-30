@@ -24,8 +24,8 @@ func TestLoad(t *testing.T) {
 	}
 
 	// Check layers
-	if len(p.Layers) != 3 {
-		t.Fatalf("got %d layers, want 3", len(p.Layers))
+	if len(p.Layers) != 4 {
+		t.Fatalf("got %d layers, want 4", len(p.Layers))
 	}
 
 	// Check layer order and properties
@@ -34,10 +34,12 @@ func TestLoad(t *testing.T) {
 		hasScript    bool
 		hasFiles     bool
 		hasFirstboot bool
+		hasPreboot   bool
 	}{
-		{"10-common", true, true, false},
-		{"20-devtools", true, false, false},
-		{"90-project", false, true, false},
+		{"10-common", true, true, false, false},
+		{"20-devtools", true, false, false, false},
+		{"50-preboot-test", false, false, false, true},
+		{"90-project", false, true, false, false},
 	}
 
 	for i, tt := range tests {
@@ -53,6 +55,9 @@ func TestLoad(t *testing.T) {
 		}
 		if layer.HasFirstboot != tt.hasFirstboot {
 			t.Errorf("layer[%d].HasFirstboot = %v, want %v", i, layer.HasFirstboot, tt.hasFirstboot)
+		}
+		if layer.HasPreboot != tt.hasPreboot {
+			t.Errorf("layer[%d].HasPreboot = %v, want %v", i, layer.HasPreboot, tt.hasPreboot)
 		}
 		if layer.ContentHash == "" {
 			t.Errorf("layer[%d].ContentHash should not be empty", i)

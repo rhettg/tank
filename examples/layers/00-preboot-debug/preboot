@@ -1,0 +1,11 @@
+#!/bin/bash
+# Debug preboot hook - logs all GI_* environment variables
+set -e
+
+echo "=== Preboot Debug ==="
+echo "GI_PROJECT_ROOT:  $GI_PROJECT_ROOT"
+echo "GI_INSTANCE_NAME: $GI_INSTANCE_NAME"
+echo "GI_LAYER_PATH:    $GI_LAYER_PATH"
+echo "GI_CLOUD_INIT:    $GI_CLOUD_INIT"
+echo "GI_WORK_DIR:      $GI_WORK_DIR"
+echo "===================="

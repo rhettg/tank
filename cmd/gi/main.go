@@ -72,9 +72,49 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 	ui.PrintStep(os.Stdout, "Build ready: %s", ui.MutedStyle.Render(buildImagePath))
 	fmt.Println()
 
+	// Prepare cloud-init content for preboot hooks
+	cloudInitContent := p.CloudInit
+
+	// Check if any layers have preboot hooks
+	hasPreboot := false
+	for _, layer := range p.Layers {
+		if layer.HasPreboot {
+			hasPreboot = true
+			break
+		}
+	}
+
+	if hasPreboot {
+		// Write cloud-init to temp file for hooks to edit
+		cloudInitFile, err := os.CreateTemp("", "gi-cloud-init-*.yaml")
+		if err != nil {
+			return fmt.Errorf("creating cloud-init temp file: %w", err)
+		}
+		cloudInitPath := cloudInitFile.Name()
+		defer os.Remove(cloudInitPath)
+
+		if _, err := cloudInitFile.WriteString(cloudInitContent); err != nil {
+			cloudInitFile.Close()
+			return fmt.Errorf("writing cloud-init temp file: %w", err)
+		}
+		cloudInitFile.Close()
+
+		// Run preboot hooks
+		if err := instance.RunPrebootHooks(p, instanceName, cloudInitPath, os.Stdout); err != nil {
+			return fmt.Errorf("preboot hooks: %w", err)
+		}
+
+		// Read modified cloud-init content
+		modifiedContent, err := os.ReadFile(cloudInitPath)
+		if err != nil {
+			return fmt.Errorf("reading modified cloud-init: %w", err)
+		}
+		cloudInitContent = string(modifiedContent)
+	}
+
 	// Create instance
 	ui.PrintInfo(os.Stdout, "Creating instance %s", ui.Bold.Render(instanceName))
-	inst, err := instance.Create(instanceName, buildImagePath, p.CloudInit, os.Stdout)
+	inst, err := instance.Create(instanceName, buildImagePath, cloudInitContent, os.Stdout)
 	if err != nil {
 		return fmt.Errorf("creating instance: %w", err)
 	}
@@ -424,11 +464,15 @@ func main() {
 
 			var rows []ui.InstanceRow
 			for _, entry := range entries {
-				if !entry.IsDir() {
+				name := entry.Name()
+				entryPath := filepath.Join(instancesDir, name)
+
+				// Use os.Stat to follow symlinks
+				info, err := os.Stat(entryPath)
+				if err != nil || !info.IsDir() {
 					continue
 				}
 
-				name := entry.Name()
 				inst, err := instance.Load(name)
 				if err != nil {
 					continue
