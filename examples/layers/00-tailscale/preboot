@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""
+Tailscale preboot hook - generates an ephemeral auth key via OAuth API
+and injects it into cloud-init for firstboot authentication.
+
+Required environment variables:
+  TAILSCALE_CLIENT_ID     - OAuth client ID from Tailscale admin console
+  TAILSCALE_CLIENT_SECRET - OAuth client secret
+  TAILSCALE_TAGS          - Comma-separated tags (e.g., "tag:server,tag:vm")
+
+Optional environment variables:
+  TAILSCALE_API_URL       - API base URL (default: https://api.tailscale.com)
+"""
+
+import json
+import os
+import sys
+import urllib.request
+import urllib.parse
+
+
+def get_access_token(client_id: str, client_secret: str, base_url: str) -> str:
+    """Exchange OAuth client credentials for an access token."""
+    token_url = f"{base_url}/api/v2/oauth/token"
+    
+    data = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+    }).encode()
+    
+    req = urllib.request.Request(token_url, data=data, method="POST")
+    
+    # Use HTTP Basic Auth with client credentials
+    import base64
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    req.add_header("Authorization", f"Basic {credentials}")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read().decode())
+            return result["access_token"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        print(f"Error getting access token: {e.code} {e.reason}", file=sys.stderr)
+        print(f"Response: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def create_auth_key(access_token: str, tags: list[str], base_url: str) -> str:
+    """Create an ephemeral, preauthorized auth key with the given tags."""
+    keys_url = f"{base_url}/api/v2/tailnet/-/keys"
+    
+    payload = {
+        "capabilities": {
+            "devices": {
+                "create": {
+                    "reusable": False,
+                    "ephemeral": True,
+                    "preauthorized": True,
+                    "tags": tags,
+                }
+            }
+        },
+        "expirySeconds": 3600,  # 1 hour - just needs to last through boot
+    }
+    
+    data = json.dumps(payload).encode()
+    
+    req = urllib.request.Request(keys_url, data=data, method="POST")
+    req.add_header("Authorization", f"Bearer {access_token}")
+    req.add_header("Content-Type", "application/json")
+    
+    try:
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read().decode())
+            return result["key"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        print(f"Error creating auth key: {e.code} {e.reason}", file=sys.stderr)
+        print(f"Response: {body}", file=sys.stderr)
+        sys.exit(1)
+
+
+def inject_into_cloud_init(cloud_init_path: str, auth_key: str) -> None:
+    """Append write_files section to cloud-init to inject the auth key."""
+    # Read existing cloud-init content
+    with open(cloud_init_path, "r") as f:
+        content = f.read()
+    
+    # Build the write_files entry to inject the secret
+    # We append to the file - cloud-init will merge write_files sections
+    secret_block = f"""
+write_files:
+  - path: /run/gi/tailscale.env
+    permissions: "0600"
+    content: |
+      TAILSCALE_AUTH_KEY={auth_key}
+"""
+    
+    with open(cloud_init_path, "a") as f:
+        f.write(secret_block)
+    
+    print(f"Injected Tailscale auth key into cloud-init")
+
+
+def main():
+    # Get required environment variables
+    client_id = os.environ.get("TAILSCALE_CLIENT_ID")
+    client_secret = os.environ.get("TAILSCALE_CLIENT_SECRET")
+    tags_str = os.environ.get("TAILSCALE_TAGS")
+    cloud_init_path = os.environ.get("GI_CLOUD_INIT")
+    instance_name = os.environ.get("GI_INSTANCE_NAME", "unknown")
+    
+    if not client_id or not client_secret:
+        print("Error: TAILSCALE_CLIENT_ID and TAILSCALE_CLIENT_SECRET must be set", file=sys.stderr)
+        sys.exit(1)
+    
+    if not tags_str:
+        print("Error: TAILSCALE_TAGS must be set (e.g., 'tag:server')", file=sys.stderr)
+        sys.exit(1)
+    
+    if not cloud_init_path:
+        print("Error: GI_CLOUD_INIT not set - is this running as a preboot hook?", file=sys.stderr)
+        sys.exit(1)
+    
+    base_url = os.environ.get("TAILSCALE_API_URL", "https://api.tailscale.com")
+    tags = [t.strip() for t in tags_str.split(",")]
+    
+    print(f"Generating Tailscale auth key for instance '{instance_name}'...")
+    print(f"  Tags: {tags}")
+    
+    # Step 1: Get OAuth access token
+    access_token = get_access_token(client_id, client_secret, base_url)
+    
+    # Step 2: Create ephemeral auth key
+    auth_key = create_auth_key(access_token, tags, base_url)
+    
+    # Step 3: Inject into cloud-init
+    inject_into_cloud_init(cloud_init_path, auth_key)
+    
+    print("Done!")
+
+
+if __name__ == "__main__":
+    main()

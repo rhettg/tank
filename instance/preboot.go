@@ -15,19 +15,25 @@ import (
 // The cloudInitPath is a writable file that hooks can edit in place.
 // Returns the final cloud-init content after all hooks have run.
 func RunPrebootHooks(p *project.Project, instanceName, cloudInitPath string, progress io.Writer) error {
+	// Load .env file from project root
+	envVars, err := project.LoadEnvFile(p.Root)
+	if err != nil {
+		return fmt.Errorf("loading .env file: %w", err)
+	}
+
 	for _, layer := range p.Layers {
 		if !layer.HasPreboot {
 			continue
 		}
 
-		if err := runPrebootHook(p, layer, instanceName, cloudInitPath, progress); err != nil {
+		if err := runPrebootHook(p, layer, instanceName, cloudInitPath, envVars, progress); err != nil {
 			return fmt.Errorf("preboot hook for layer %s: %w", layer.Name, err)
 		}
 	}
 	return nil
 }
 
-func runPrebootHook(p *project.Project, layer project.Layer, instanceName, cloudInitPath string, progress io.Writer) error {
+func runPrebootHook(p *project.Project, layer project.Layer, instanceName, cloudInitPath string, envVars []string, progress io.Writer) error {
 	ui.PrintStep(progress, "Running preboot hook: %s", ui.Bold.Render(layer.Name))
 
 	prebootPath := filepath.Join(layer.Path, "preboot")
@@ -41,7 +47,11 @@ func runPrebootHook(p *project.Project, layer project.Layer, instanceName, cloud
 
 	cmd := exec.Command(prebootPath)
 	cmd.Dir = layer.Path
-	cmd.Env = append(os.Environ(),
+
+	// Start with current environment, add .env vars, then GI_* vars
+	// Later values override earlier ones
+	cmd.Env = append(os.Environ(), envVars...)
+	cmd.Env = append(cmd.Env,
 		"GI_PROJECT_ROOT="+p.Root,
 		"GI_INSTANCE_NAME="+instanceName,
 		"GI_LAYER_PATH="+layer.Path,
