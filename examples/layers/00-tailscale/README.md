@@ -55,7 +55,7 @@ export TAILSCALE_CLIENT_ID="your-client-id"
 export TAILSCALE_CLIENT_SECRET="your-client-secret"
 export TAILSCALE_TAGS="tag:server"
 
-gi start
+tank start
 ```
 
 The VM will automatically appear in your tailnet as an ephemeral node.
@@ -63,6 +63,6 @@ The VM will automatically appear in your tailnet as an ephemeral node.
 ## Security Notes
 
 - Auth keys are ephemeral and expire after 1 hour
-- The key is stored only in RAM (`/run/gi/tailscale.env`) and not persisted to disk
+- The key is stored only in RAM (`/run/tank/tailscale.env`) and not persisted to disk
 - VMs are registered as ephemeral nodes and auto-removed when offline
 - OAuth client secrets should be stored securely (e.g., password manager, secrets vault)

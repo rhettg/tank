@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rhettg/graystone/project"
+	"github.com/rhettg/tank/project"
 )
 
 func TestRunPrebootHooks(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRunPrebootHooks(t *testing.T) {
 
 	// Create preboot script that appends to cloud-init
 	prebootScript := `#!/bin/bash
-echo "# Added by preboot: $GI_INSTANCE_NAME" >> "$GI_CLOUD_INIT"
+echo "# Added by preboot: $TANK_INSTANCE_NAME" >> "$TANK_CLOUD_INIT"
 `
 	if err := os.WriteFile(filepath.Join(layerDir, "preboot"), []byte(prebootScript), 0755); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestRunPrebootHooksOrder(t *testing.T) {
 	if err := os.MkdirAll(layer1Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(layer1Dir, "preboot"), []byte("#!/bin/bash\necho 'first' >> \"$GI_CLOUD_INIT\"\n"), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(layer1Dir, "preboot"), []byte("#!/bin/bash\necho 'first' >> \"$TANK_CLOUD_INIT\"\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +93,7 @@ func TestRunPrebootHooksOrder(t *testing.T) {
 	if err := os.MkdirAll(layer2Dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(layer2Dir, "preboot"), []byte("#!/bin/bash\necho 'second' >> \"$GI_CLOUD_INIT\"\n"), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(layer2Dir, "preboot"), []byte("#!/bin/bash\necho 'second' >> \"$TANK_CLOUD_INIT\"\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,12 +191,12 @@ func TestRunPrebootHooksEnvVars(t *testing.T) {
 		t.Fatal(err)
 	}
 	prebootScript := `#!/bin/bash
-echo "PROJECT_ROOT=$GI_PROJECT_ROOT" >> "$GI_CLOUD_INIT"
-echo "INSTANCE_NAME=$GI_INSTANCE_NAME" >> "$GI_CLOUD_INIT"
-echo "LAYER_PATH=$GI_LAYER_PATH" >> "$GI_CLOUD_INIT"
-echo "WORK_DIR=$GI_WORK_DIR" >> "$GI_CLOUD_INIT"
+echo "PROJECT_ROOT=$TANK_PROJECT_ROOT" >> "$TANK_CLOUD_INIT"
+echo "INSTANCE_NAME=$TANK_INSTANCE_NAME" >> "$TANK_CLOUD_INIT"
+echo "LAYER_PATH=$TANK_LAYER_PATH" >> "$TANK_CLOUD_INIT"
+echo "WORK_DIR=$TANK_WORK_DIR" >> "$TANK_CLOUD_INIT"
 # Verify work dir exists
-test -d "$GI_WORK_DIR" || exit 1
+test -d "$TANK_WORK_DIR" || exit 1
 `
 	if err := os.WriteFile(filepath.Join(layerDir, "preboot"), []byte(prebootScript), 0755); err != nil {
 		t.Fatal(err)
@@ -231,15 +231,15 @@ test -d "$GI_WORK_DIR" || exit 1
 
 	// Check env vars were set correctly
 	if !strings.Contains(content, "PROJECT_ROOT="+p.Root) {
-		t.Errorf("GI_PROJECT_ROOT not set correctly, got:\n%s", content)
+		t.Errorf("TANK_PROJECT_ROOT not set correctly, got:\n%s", content)
 	}
 	if !strings.Contains(content, "INSTANCE_NAME=my-instance") {
-		t.Errorf("GI_INSTANCE_NAME not set correctly, got:\n%s", content)
+		t.Errorf("TANK_INSTANCE_NAME not set correctly, got:\n%s", content)
 	}
 	if !strings.Contains(content, "LAYER_PATH="+layerDir) {
-		t.Errorf("GI_LAYER_PATH not set correctly, got:\n%s", content)
+		t.Errorf("TANK_LAYER_PATH not set correctly, got:\n%s", content)
 	}
 	if !strings.Contains(content, "WORK_DIR=/") {
-		t.Errorf("GI_WORK_DIR not set, got:\n%s", content)
+		t.Errorf("TANK_WORK_DIR not set, got:\n%s", content)
 	}
 }

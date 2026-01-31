@@ -1,11 +1,11 @@
 #!/bin/bash
-# Debug preboot hook - logs all GI_* environment variables
+# Debug preboot hook - logs all TANK_* environment variables
 set -e
 
 echo "=== Preboot Debug ==="
-echo "GI_PROJECT_ROOT:  $GI_PROJECT_ROOT"
-echo "GI_INSTANCE_NAME: $GI_INSTANCE_NAME"
-echo "GI_LAYER_PATH:    $GI_LAYER_PATH"
-echo "GI_CLOUD_INIT:    $GI_CLOUD_INIT"
-echo "GI_WORK_DIR:      $GI_WORK_DIR"
+echo "TANK_PROJECT_ROOT:  $TANK_PROJECT_ROOT"
+echo "TANK_INSTANCE_NAME: $TANK_INSTANCE_NAME"
+echo "TANK_LAYER_PATH:    $TANK_LAYER_PATH"
+echo "TANK_CLOUD_INIT:    $TANK_CLOUD_INIT"
+echo "TANK_WORK_DIR:      $TANK_WORK_DIR"
 echo "===================="

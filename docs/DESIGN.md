@@ -1,8 +1,8 @@
-# Graystone Design Document
+# Tank Design Document
 
 ## Overview
 
-Graystone is a Unix-style tool for building deterministic VM images and running disposable machines using libvirt and KVM. It treats VMs with the same simplicity and disposability as containers while maintaining the benefits of real machines.
+Tank is a Unix-style tool for building deterministic VM images and running disposable machines using libvirt and KVM. It treats VMs with the same simplicity and disposability as containers while maintaining the benefits of real machines.
 
 ## Core Principles
 
@@ -17,15 +17,15 @@ Graystone is a Unix-style tool for building deterministic VM images and running 
 
 ### Components
 
-#### 1. CLI (`gi` command)
+#### 1. CLI (`tank` command)
 
 The entry point for all user interactions. Operates on the current project (CWD).
 
 **Commands:**
-- `gi start [instance-suffix]` — Build image (if needed) and start VM (default: directory name)
-- `gi stop [instance-suffix]` — Stop the VM
-- `gi destroy [instance-suffix]` — Remove the VM completely
-- `gi ssh [instance-suffix]` — SSH into the VM
+- `tank start [instance-suffix]` — Build image (if needed) and start VM (default: directory name)
+- `tank stop [instance-suffix]` — Stop the VM
+- `tank destroy [instance-suffix]` — Remove the VM completely
+- `tank ssh [instance-suffix]` — SSH into the VM
 
 **Options:**
 - `--cpus N` — CPU count
@@ -35,21 +35,21 @@ The entry point for all user interactions. Operates on the current project (CWD)
 **Examples:**
 ```bash
 # Initialize new project
-gi init --base ubuntu-24.04
+tank init --base ubuntu-24.04
 
 # In ~/projects/web-app/
-gi start                        # Instance: web-app
-gi start secondary --cpus 4     # Instance: web-app-secondary
-gi stop                         # Stops web-app
-gi ssh secondary                # SSH into web-app-secondary
+tank start                        # Instance: web-app
+tank start secondary --cpus 4     # Instance: web-app-secondary
+tank stop                         # Stops web-app
+tank ssh secondary                # SSH into web-app-secondary
 ```
 
 **Full command list:**
-- `gi init [--base DISTRO]` — Scaffold new graystone project
-- `gi start [instance-suffix]` — Build image and start VM
-- `gi stop [instance-suffix]` — Stop VM
-- `gi destroy [instance-suffix]` — Remove VM
-- `gi ssh [instance-suffix]` — SSH into VM
+- `tank init [--base DISTRO]` — Scaffold new tank project
+- `tank start [instance-suffix]` — Build image and start VM
+- `tank stop [instance-suffix]` — Stop VM
+- `tank destroy [instance-suffix]` — Remove VM
+- `tank ssh [instance-suffix]` — SSH into VM
 
 #### 2. Project Scanner
 
@@ -60,7 +60,7 @@ Reads the project directory structure to understand:
 
 **Directory Structure:**
 ```
-graystone/
+tank/
 ├── BASE                    # Base image file or URL
 ├── layers/
 │   ├── 10-common/
@@ -78,7 +78,7 @@ Orchestrates the image build process:
 1. **Base Image Acquisition**
    - Read `BASE` file (local path or remote URL)
    - Download if needed
-   - Store in `/var/lib/graystone/bases/<digest>/`
+   - Store in `/var/lib/tank/bases/<digest>/`
    - Skip if cached
 
 2. **Layer Application** (in lexicographic order)
@@ -90,12 +90,12 @@ Orchestrates the image build process:
      - Unmount and finalize
 
 3. **Image Caching**
-   - Cache intermediate layer artifacts in `/var/lib/graystone/cache/`
+   - Cache intermediate layer artifacts in `/var/lib/tank/cache/`
    - Use content-addressed naming (hash-based)
    - Rebuild only layers that changed
 
 4. **Final Image**
-   - Store in `/var/lib/graystone/images/<project-name>/`
+   - Store in `/var/lib/tank/images/<project-name>/`
    - Link as `current` for easy reference
    - Symlink back to specific version
 
@@ -104,7 +104,7 @@ Orchestrates the image build process:
 Creates and manages running VMs:
 
 1. **Instance Creation**
-   - Clone final image to `/var/lib/graystone/instances/<name>/disk.qcow2`
+   - Clone final image to `/var/lib/tank/instances/<name>/disk.qcow2`
    - Create libvirt domain XML with specified resources
    - Inject cloud-init data if provided
 
@@ -125,7 +125,7 @@ Creates and manages running VMs:
 
 **Directory Layout:**
 ```
-/var/lib/graystone/
+/var/lib/tank/
 ├── bases/                          # Immutable base images
 │   └── <base-digest>/
 │       └── base.qcow2
@@ -159,7 +159,7 @@ instance/disk.qcow2 (mutable, per-VM)
 ### Data Flow
 
 ```
-1. User runs: gi start myvm --cpus 4 --memory 8192
+1. User runs: tank start myvm --cpus 4 --memory 8192
 
 2. Project Scanner
    ├─ Parse project directory
@@ -211,7 +211,7 @@ instance/disk.qcow2 (mutable, per-VM)
 
 ```
 Image hash: sha256(base_digest + all_layer_hashes)
-Image path: /var/lib/graystone/images/<project>/
+Image path: /var/lib/tank/images/<project>/
 Link:       current -> <image_hash>.qcow2
 ```
 
@@ -236,19 +236,19 @@ Link:       current -> <image_hash>.qcow2
 
 ### Locking and Concurrency
 
-- Use file locks in `/var/lib/graystone/locks/`
+- Use file locks in `/var/lib/tank/locks/`
 - Prevent concurrent builds of same image
 - Allow concurrent instance creation from built images
 - Lock per project name
 
-## `gi init` Command
+## `tank init` Command
 
-Scaffolds a new graystone project in the current directory.
+Scaffolds a new tank project in the current directory.
 
 **Usage:**
 ```bash
-gi init --base ubuntu-24.04
-gi init --base fedora-41
+tank init --base ubuntu-24.04
+tank init --base fedora-41
 ```
 
 **Creates:**
@@ -283,7 +283,7 @@ gi init --base fedora-41
 
 **Project root:**
 ```
-graystone/              (arbitrary name)
+tank/              (arbitrary name)
 ├── BASE                # "https://..." or "./path/to/base.qcow2"
 ├── layers/
 │   ├── 10-common/
@@ -318,28 +318,28 @@ graystone/              (arbitrary name)
 ```bash
 # Start (build if needed)
 # Default instance name = $(basename $PWD)
-gi start
+tank start
 
 # Additional instances from same project
-gi start secondary --cpus 8 --memory 16384 --disk 100G
+tank start secondary --cpus 8 --memory 16384 --disk 100G
 
 # Stop
-gi stop
-gi stop secondary
+tank stop
+tank stop secondary
 
 # Destroy
-gi destroy
-gi destroy secondary
+tank destroy
+tank destroy secondary
 
 # SSH
-gi ssh
-gi ssh secondary
+tank ssh
+tank ssh secondary
 ```
 
 **Naming Scheme:**
 - Default instance: `<project-dir-name>` (e.g., `web-app`)
 - Additional instances: `<project-dir-name>-<suffix>` (e.g., `web-app-secondary`)
-- libvirt domains: prefixed with `graystone-` for isolation (e.g., `graystone-web-app`)
+- libvirt domains: prefixed with `tank-` for isolation (e.g., `tank-web-app`)
 
 ## Storage Efficiency
 
@@ -384,7 +384,7 @@ gi ssh secondary
 
 ## Libvirt Connection: System vs Session Mode
 
-Graystone uses `qemu:///system` (system mode) rather than `qemu:///session` (session mode).
+Tank uses `qemu:///system` (system mode) rather than `qemu:///session` (session mode).
 
 ### Why not session mode?
 
@@ -401,7 +401,7 @@ These issues make session mode impractical for a tool that needs VMs to be reach
 System mode (`qemu:///system`) runs QEMU as the `libvirt-qemu` user and lets libvirt manage networking (bridges, DHCP, DNS, firewall rules) centrally. This requires:
 
 1. **User must be in the `libvirt` group** — for unprivileged access to the system libvirt daemon.
-2. **Storage in `/var/lib/graystone/`** — so the `libvirt-qemu` user can read disk images. The directory is owned by `root:libvirt` with mode `2775` (setgid), so any `libvirt` group member can write, and `libvirt-qemu` reads via world-readable file permissions.
+2. **Storage in `/var/lib/tank/`** — so the `libvirt-qemu` user can read disk images. The directory is owned by `root:libvirt` with mode `2775` (setgid), so any `libvirt` group member can write, and `libvirt-qemu` reads via world-readable file permissions.
 3. **`--network default`** — uses libvirt's managed default network (virbr0 bridge with NAT, DHCP, and DNS), which works out of the box with system mode.
 
 ## Dependencies

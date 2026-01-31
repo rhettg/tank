@@ -11,8 +11,8 @@ func TestInstanceDir(t *testing.T) {
 		t.Fatalf("InstanceDir() error: %v", err)
 	}
 
-	if dir != "/var/lib/graystone/instances/test-instance" {
-		t.Errorf("InstanceDir() = %q, want /var/lib/graystone/instances/test-instance", dir)
+	if dir != "/var/lib/tank/instances/test-instance" {
+		t.Errorf("InstanceDir() = %q, want /var/lib/tank/instances/test-instance", dir)
 	}
 }
 
@@ -33,9 +33,9 @@ func TestLoadNonExistent(t *testing.T) {
 
 func TestDomainName(t *testing.T) {
 	// Create a fake instance directory at the expected path
-	instanceDir := "/var/lib/graystone/instances/myproject"
+	instanceDir := "/var/lib/tank/instances/myproject"
 	if err := os.MkdirAll(instanceDir, 0755); err != nil {
-		t.Skipf("cannot create test directory (need write access to /var/lib/graystone): %v", err)
+		t.Skipf("cannot create test directory (need write access to /var/lib/tank): %v", err)
 	}
 	defer os.RemoveAll(instanceDir)
 
@@ -49,7 +49,7 @@ func TestDomainName(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
-	if inst.Domain != "gi-myproject" {
-		t.Errorf("Domain = %q, want %q", inst.Domain, "gi-myproject")
+	if inst.Domain != "tank-myproject" {
+		t.Errorf("Domain = %q, want %q", inst.Domain, "tank-myproject")
 	}
 }

@@ -16,12 +16,12 @@ def get_env(name: str) -> str:
     return value
 
 
-cloud_init_path = Path(get_env("GI_CLOUD_INIT"))
+cloud_init_path = Path(get_env("TANK_CLOUD_INIT"))
 username = get_env("USER")
 home = Path(get_env("HOME"))
 
 if not cloud_init_path.exists():
-    raise SystemExit(f"GI_CLOUD_INIT does not exist: {cloud_init_path}")
+    raise SystemExit(f"TANK_CLOUD_INIT does not exist: {cloud_init_path}")
 
 key_path = None
 for candidate in (home / ".ssh/id_ed25519.pub", home / ".ssh/id_rsa.pub"):

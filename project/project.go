@@ -20,7 +20,7 @@ type Layer struct {
 	ContentHash  string // SHA256 of layer contents
 }
 
-// Project represents a graystone project.
+// Project represents a tank project.
 type Project struct {
 	Root      string  // Project root directory
 	Base      string  // Contents of BASE file

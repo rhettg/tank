@@ -10,6 +10,10 @@ Required environment variables:
 
 Optional environment variables:
   TAILSCALE_API_URL       - API base URL (default: https://api.tailscale.com)
+
+Tank environment variables (set by tank):
+  TANK_CLOUD_INIT         - Path to cloud-init file to edit
+  TANK_INSTANCE_NAME      - Name of the instance being created
 """
 
 import json
@@ -91,7 +95,7 @@ def inject_into_cloud_init(cloud_init_path: str, auth_key: str) -> None:
     # We append to the file - cloud-init will merge write_files sections
     secret_block = f"""
 write_files:
-  - path: /run/gi/tailscale.env
+  - path: /run/tank/tailscale.env
     permissions: "0600"
     content: |
       TAILSCALE_AUTH_KEY={auth_key}
@@ -108,8 +112,8 @@ def main():
     client_id = os.environ.get("TAILSCALE_CLIENT_ID")
     client_secret = os.environ.get("TAILSCALE_CLIENT_SECRET")
     tags_str = os.environ.get("TAILSCALE_TAGS")
-    cloud_init_path = os.environ.get("GI_CLOUD_INIT")
-    instance_name = os.environ.get("GI_INSTANCE_NAME", "unknown")
+    cloud_init_path = os.environ.get("TANK_CLOUD_INIT")
+    instance_name = os.environ.get("TANK_INSTANCE_NAME", "unknown")
     
     if not client_id or not client_secret:
         print("Error: TAILSCALE_CLIENT_ID and TAILSCALE_CLIENT_SECRET must be set", file=sys.stderr)
@@ -120,7 +124,7 @@ def main():
         sys.exit(1)
     
     if not cloud_init_path:
-        print("Error: GI_CLOUD_INIT not set - is this running as a preboot hook?", file=sys.stderr)
+        print("Error: TANK_CLOUD_INIT not set - is this running as a preboot hook?", file=sys.stderr)
         sys.exit(1)
     
     base_url = os.environ.get("TAILSCALE_API_URL", "https://api.tailscale.com")

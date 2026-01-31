@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/rhettg/graystone/project"
-	"github.com/rhettg/graystone/ui"
+	"github.com/rhettg/tank/project"
+	"github.com/rhettg/tank/ui"
 )
 
 // RunPrebootHooks executes preboot hooks for all layers that have them.
@@ -39,7 +39,7 @@ func runPrebootHook(p *project.Project, layer project.Layer, instanceName, cloud
 	prebootPath := filepath.Join(layer.Path, "preboot")
 
 	// Create a temporary work directory for the hook
-	workDir, err := os.MkdirTemp("", fmt.Sprintf("gi-preboot-%s-", layer.Name))
+	workDir, err := os.MkdirTemp("", fmt.Sprintf("tank-preboot-%s-", layer.Name))
 	if err != nil {
 		return fmt.Errorf("creating work directory: %w", err)
 	}
@@ -48,15 +48,15 @@ func runPrebootHook(p *project.Project, layer project.Layer, instanceName, cloud
 	cmd := exec.Command(prebootPath)
 	cmd.Dir = layer.Path
 
-	// Start with current environment, add .env vars, then GI_* vars
+	// Start with current environment, add .env vars, then TANK_* vars
 	// Later values override earlier ones
 	cmd.Env = append(os.Environ(), envVars...)
 	cmd.Env = append(cmd.Env,
-		"GI_PROJECT_ROOT="+p.Root,
-		"GI_INSTANCE_NAME="+instanceName,
-		"GI_LAYER_PATH="+layer.Path,
-		"GI_CLOUD_INIT="+cloudInitPath,
-		"GI_WORK_DIR="+workDir,
+		"TANK_PROJECT_ROOT="+p.Root,
+		"TANK_INSTANCE_NAME="+instanceName,
+		"TANK_LAYER_PATH="+layer.Path,
+		"TANK_CLOUD_INIT="+cloudInitPath,
+		"TANK_WORK_DIR="+workDir,
 	)
 	cmd.Stdout = progress
 	cmd.Stderr = progress

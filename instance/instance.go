@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rhettg/graystone/build"
-	"github.com/rhettg/graystone/ui"
+	"github.com/rhettg/tank/build"
+	"github.com/rhettg/tank/ui"
 )
 
 // DefaultCloudInit generates a cloud-init config that creates a user matching
@@ -70,7 +70,7 @@ type Instance struct {
 	Dir       string // Instance directory path
 	DiskPath  string // Path to COW overlay disk
 	ISOPath   string // Path to cloud-init ISO
-	Domain    string // libvirt domain name (gi-<name>)
+	Domain    string // libvirt domain name (tank-<name>)
 }
 
 // InstanceDir returns the directory for an instance.
@@ -114,7 +114,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 		Dir:      dir,
 		DiskPath: filepath.Join(dir, "disk.qcow2"),
 		ISOPath:  filepath.Join(dir, "cloud-init.iso"),
-		Domain:   "gi-" + name,
+		Domain:   "tank-" + name,
 	}
 
 	// Create COW overlay disk backed by build image
@@ -283,7 +283,7 @@ func Load(name string) (*Instance, error) {
 		Dir:      dir,
 		DiskPath: filepath.Join(dir, "disk.qcow2"),
 		ISOPath:  filepath.Join(dir, "cloud-init.iso"),
-		Domain:   "gi-" + name,
+		Domain:   "tank-" + name,
 	}
 
 	// Check if ISO exists

@@ -3,9 +3,9 @@
 ## Summary
 
 Introduce a host-side layer hook, `preboot`, that runs before instance creation.
-The hook receives a writable cloud-init file path via `GI_CLOUD_INIT` and can edit
+The hook receives a writable cloud-init file path via `TANK_CLOUD_INIT` and can edit
 it in place. This enables workflows like Tailscale OAuth key generation and secret
-injection without adding Tailscale-specific logic to Graystone core.
+injection without adding Tailscale-specific logic to Tank core.
 
 ## Goals
 
@@ -33,25 +33,25 @@ Each `preboot` runs on the host before the VM is created.
 
 Expose the following environment variables to `preboot`:
 
-- `GI_PROJECT_ROOT`: absolute path to project root
-- `GI_INSTANCE_NAME`: resolved instance name
-- `GI_LAYER_PATH`: absolute path to the current layer
-- `GI_CLOUD_INIT`: writable path to the instance cloud-init user-data file
-- `GI_WORK_DIR`: temporary directory for hook scratch files
+- `TANK_PROJECT_ROOT`: absolute path to project root
+- `TANK_INSTANCE_NAME`: resolved instance name
+- `TANK_LAYER_PATH`: absolute path to the current layer
+- `TANK_CLOUD_INIT`: writable path to the instance cloud-init user-data file
+- `TANK_WORK_DIR`: temporary directory for hook scratch files
 
 ### Cloud-Init Flow
 
-1. `gi start` resolves the instance name.
-2. Graystone assembles base cloud-init:
+1. `tank start` resolves the instance name.
+2. Tank assembles base cloud-init:
    - default user + SSH key content
    - project `cloud-init.yaml` (if present)
-3. Graystone writes the merged content to a temp file and sets `GI_CLOUD_INIT`.
-4. `preboot` hooks run in layer order and edit `GI_CLOUD_INIT` in place.
-5. Graystone reads `GI_CLOUD_INIT` and generates the cloud-init ISO.
+3. Tank writes the merged content to a temp file and sets `TANK_CLOUD_INIT`.
+4. `preboot` hooks run in layer order and edit `TANK_CLOUD_INIT` in place.
+5. Tank reads `TANK_CLOUD_INIT` and generates the cloud-init ISO.
 
 ### Error Handling
 
-- If a `preboot` hook exits non-zero, abort `gi start` and surface its output.
+- If a `preboot` hook exits non-zero, abort `tank start` and surface its output.
 
 ## Tailscale Example
 
@@ -69,11 +69,11 @@ layers/
 
 - Perform OAuth client flow against Tailscale API.
 - Create ephemeral, tagged auth key.
-- Inject the key into `GI_CLOUD_INIT` using `write_files`:
+- Inject the key into `TANK_CLOUD_INIT` using `write_files`:
 
 ```
 write_files:
-  - path: /run/gi/secrets.env
+  - path: /run/tank/secrets.env
     permissions: "0600"
     content: |
       TAILSCALE_AUTH_KEY=tskey-...
@@ -81,7 +81,7 @@ write_files:
 
 ### `firstboot.sh` (guest-side)
 
-- Source `/run/gi/secrets.env`.
+- Source `/run/tank/secrets.env`.
 - Run `tailscale up --auth-key "$TAILSCALE_AUTH_KEY" --hostname "$HOSTNAME"`.
 
 ## Implementation Sketch
@@ -94,7 +94,7 @@ write_files:
 ### Instance Creation Path
 
 - Build base cloud-init content (existing logic).
-- Write to a temp file (`GI_CLOUD_INIT`).
+- Write to a temp file (`TANK_CLOUD_INIT`).
 - For each layer with `preboot`:
   - Run the script on the host with env vars listed above.
 - Read the updated cloud-init file and pass it to instance creation.
@@ -106,12 +106,12 @@ write_files:
 ## Open Questions
 
 - Should we provide a helper for YAML merging or expect hooks to manage it?
-- Should `GI_WORK_DIR` be created per-instance or per-hook?
+- Should `TANK_WORK_DIR` be created per-instance or per-hook?
 - Should a preboot hook be allowed to remove cloud-init entirely?
 
 ## Definition of Done
 
 - `preboot` is detected and executed in layer order.
-- `GI_CLOUD_INIT` is editable and reflected in the final cloud-init ISO.
-- Failures in preboot hooks stop `gi start` with clear errors.
+- `TANK_CLOUD_INIT` is editable and reflected in the final cloud-init ISO.
+- Failures in preboot hooks stop `tank start` with clear errors.
 - Documentation updated to describe the new hook and use case.

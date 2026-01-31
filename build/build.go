@@ -12,12 +12,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/rhettg/graystone/project"
+	"github.com/rhettg/tank/project"
 )
 
-// CacheDir returns the graystone storage directory (/var/lib/graystone).
+// CacheDir returns the tank storage directory (/var/lib/tank).
 func CacheDir() (string, error) {
-	return "/var/lib/graystone", nil
+	return "/var/lib/tank", nil
 }
 
 // BaseImagePath returns the cache path for a base image URL.
@@ -438,7 +438,7 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 
 	buildPath, err := BuildImagePath(projectHash)
 	if err != nil {
-		buildPath = "/var/lib/graystone/builds/" + projectHash + ".qcow2"
+		buildPath = "/var/lib/tank/builds/" + projectHash + ".qcow2"
 	}
 	fmt.Fprintf(w, "  %s path %s\n", symbolDot, mutedStyle.Render(buildPath))
 

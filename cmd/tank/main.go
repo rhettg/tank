@@ -10,10 +10,10 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/rhettg/graystone/build"
-	"github.com/rhettg/graystone/instance"
-	"github.com/rhettg/graystone/project"
-	"github.com/rhettg/graystone/ui"
+	"github.com/rhettg/tank/build"
+	"github.com/rhettg/tank/instance"
+	"github.com/rhettg/tank/project"
+	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 	}
 
 	if p.CloudInit == "" {
-		return fmt.Errorf("no cloud-init.yaml found in project directory (run 'gi init' to create one)")
+		return fmt.Errorf("no cloud-init.yaml found in project directory (run 'tank init' to create one)")
 	}
 
 	if instanceName == "" {
@@ -86,7 +86,7 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 
 	if hasPreboot {
 		// Write cloud-init to temp file for hooks to edit
-		cloudInitFile, err := os.CreateTemp("", "gi-cloud-init-*.yaml")
+		cloudInitFile, err := os.CreateTemp("", "tank-cloud-init-*.yaml")
 		if err != nil {
 			return fmt.Errorf("creating cloud-init temp file: %w", err)
 		}
@@ -131,8 +131,8 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "gi",
-		Short: ui.Title.Render("Graystone Industries") + " — deterministic VM images",
+		Use:   "tank",
+		Short: ui.Title.Render("Tank") + " — deterministic VM images",
 		Long:  "Build and run disposable virtual machines using libvirt and KVM.",
 	}
 
@@ -140,14 +140,14 @@ func main() {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("%s %s\n", ui.Bold.Render("gi"), ui.Highlight.Render(getVersion()))
+			fmt.Printf("%s %s\n", ui.Bold.Render("tank"), ui.Highlight.Render(getVersion()))
 		},
 	}
 
 	var initProjectPath string
 	initCmd := &cobra.Command{
 		Use:   "init <base-url>",
-		Short: "Initialize a new graystone project",
+		Short: "Initialize a new tank project",
 		Long:  "Create a new project directory with BASE, cloud-init.yaml, and a starter layer.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -1,4 +1,4 @@
-module github.com/rhettg/graystone
+module github.com/rhettg/tank
 
 go 1.25.5
 

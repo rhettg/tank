@@ -2,7 +2,7 @@
 # Authenticate Tailscale on first boot using the injected auth key
 set -e
 
-SECRETS_FILE="/run/gi/tailscale.env"
+SECRETS_FILE="/run/tank/tailscale.env"
 
 if [ ! -f "$SECRETS_FILE" ]; then
     echo "Error: $SECRETS_FILE not found - preboot hook may have failed"

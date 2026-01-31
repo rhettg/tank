@@ -6,7 +6,7 @@ current host username and SSH public key.
 
 ## Files
 
-- `preboot`: edits `GI_CLOUD_INIT` in place to add a user and SSH key
+- `preboot`: edits `TANK_CLOUD_INIT` in place to add a user and SSH key
 
 ## Behavior
 
