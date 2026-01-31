@@ -1,16 +1,16 @@
-# Graystone
+# Tank
 
 **Deterministic VM images. Disposable machines. Built for libvirt.**
 
-Graystone Industries (`gi`) is an opinionated, Unix-style tool for **building and running virtual machines locally** using **libvirt and KVM**.
+Tank is an opinionated, Unix-style tool for **building and running virtual machines locally** using **libvirt and KVM**.
 
-If you want VMs that feel as cheap and repeatable as containers—but remain real machines—Graystone is for you.
+If you want VMs that feel as cheap and repeatable as containers—but remain real machines—Tank is for you.
 
 ---
 
-## What Graystone does
+## What Tank does
 
-Graystone has two responsibilities:
+Tank has two responsibilities:
 
 1. **Build immutable VM images** from files and shell scripts
 2. **Run disposable virtual machines** from those images using libvirt
@@ -19,20 +19,20 @@ Graystone has two responsibilities:
 
 ## Command reference
 
-* **`gi start [name]`** — Build image (if needed) and start the VM (default name: project directory)
-* **`gi stop [name]`** — Stop the VM (default name: project directory)
-* **`gi destroy [name]`** — Stop and remove the VM completely (default name: project directory)
-* **`gi ssh [name]`** — Connect to the VM over SSH (default name: project directory)
+* **`tank start [name]`** — Build image (if needed) and start the VM
+* **`tank stop [name]`** — Stop the VM
+* **`tank destroy [name]`** — Stop and remove the VM completely
+* **`tank ssh [name]`** — Connect to the VM over SSH
 
 Run multiple instances from the same image:
 
 ```bash
-gi start                     # uses directory name, e.g. "myproject"
-gi start secondary --cpus 4  # custom name "secondary"
-gi start dev --memory 8192   # custom name "dev"
+tank start                     # uses directory name, e.g. "myproject"
+tank start secondary --cpus 4  # custom name "secondary"
+tank start dev --memory 8192   # custom name "dev"
 ```
 
-Optional arguments to `gi start`:
+Optional arguments to `tank start`:
 
 * `--cpus N` — CPU count (default: 2)
 * `--memory MB` — RAM in MB (default: 4096)
@@ -40,18 +40,18 @@ Optional arguments to `gi start`:
 
 ## The filesystem *is* the interface
 
-Graystone projects are driven entirely by the filesystem.
+Tank projects are driven entirely by the filesystem.
 
 A minimal project:
 
 ```
-graystone/
+myproject/
 ├── BASE
 ├── layers/
 │   ├── 10-common/
 │   ├── 20-devtools/
 │   └── 90-project/
-└── cloud-init.yaml   # optional
+└── cloud-init.yaml
 ```
 
 ---
@@ -114,14 +114,14 @@ There is no hidden merge logic—just filesystem semantics.
 
 ## Prerequisites
 
-Graystone requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM management.
+Tank requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM management.
 
 ### System packages
 
-- `libvirt`
-- `qemu-full` (or equivalent)
-- `guestfs-tools` (provides `virt-customize` for applying layers)
-- `genisoimage` (for cloud-init ISOs)
+* `libvirt`
+* `qemu-full` (or equivalent)
+* `guestfs-tools` (provides `virt-customize` for applying layers)
+* `genisoimage` (for cloud-init ISOs)
 
 ### Groups
 
@@ -135,28 +135,29 @@ Log out and back in for the group to take effect.
 
 ### Storage directory
 
-Graystone stores images and instances in `/var/lib/graystone`. Create it with:
+Tank stores images and instances in `/var/lib/tank`. Create it with:
 
 ```bash
-sudo mkdir -p /var/lib/graystone
-sudo chown root:libvirt /var/lib/graystone
-sudo chmod 2775 /var/lib/graystone
+sudo mkdir -p /var/lib/tank
+sudo chown root:libvirt /var/lib/tank
+sudo chmod 2775 /var/lib/tank
 ```
 
 This gives:
-- `root` ownership (conventional for `/var/lib`)
-- `libvirt` group with write access (so any `libvirt` group member can run `gi`)
-- Setgid bit so new files/directories inherit the `libvirt` group
-- `libvirt-qemu` (the user QEMU runs as under system mode) can read images via world-readable permissions
+
+* `root` ownership (conventional for `/var/lib`)
+* `libvirt` group with write access (so any `libvirt` group member can run `tank`)
+* Setgid bit so new files/directories inherit the `libvirt` group
+* `libvirt-qemu` (the user QEMU runs as under system mode) can read images via world-readable permissions
 
 ---
 
 ## Storage model (qcow2 backing chains)
 
-Graystone stores everything under `/var/lib/graystone/`.
+Tank stores everything under `/var/lib/tank/`.
 
 ```
-/var/lib/graystone/
+/var/lib/tank/
 ├── images/
 │   └── <base-image-name>.img
 ├── builds/
@@ -200,14 +201,14 @@ before the VM boots (for example, to inject short-lived secrets).
 
 The `preboot` script runs on the host before instance creation. It receives:
 
-- `GI_PROJECT_ROOT` — absolute path to project root
-- `GI_INSTANCE_NAME` — resolved instance name
-- `GI_LAYER_PATH` — absolute path to the current layer
-- `GI_CLOUD_INIT` — writable path to the cloud-init user-data file
-- `GI_WORK_DIR` — temporary directory for hook scratch files
+* `TANK_PROJECT_ROOT` — absolute path to project root
+* `TANK_INSTANCE_NAME` — resolved instance name
+* `TANK_LAYER_PATH` — absolute path to the current layer
+* `TANK_CLOUD_INIT` — writable path to the cloud-init user-data file
+* `TANK_WORK_DIR` — temporary directory for hook scratch files
 
-Hooks run in layer order and can edit `GI_CLOUD_INIT` in place. If a hook exits
-non-zero, `gi start` aborts with an error.
+Hooks run in layer order and can edit `TANK_CLOUD_INIT` in place. If a hook exits
+non-zero, `tank start` aborts with an error.
 
 Images remain reusable.
 Instances remain unique.
@@ -220,6 +221,6 @@ Instances remain unique.
 > Images are intentional.
 > Rebuild instead of repair.
 
-Graystone brings container-style ergonomics back to virtual machines—without pretending VMs are containers.
+Tank brings container-style ergonomics to virtual machines—without pretending VMs are containers.
 
 ---
