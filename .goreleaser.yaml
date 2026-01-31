@@ -1,0 +1,63 @@
+version: 2
+
+project_name: tank
+
+builds:
+  - main: ./cmd/tank
+    binary: tank
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+nfpms:
+  - package_name: tank
+    vendor: rhettg
+    maintainer: Rhett Garber
+    description: Tank - deterministic VM images and disposable machines for libvirt
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    dependencies:
+      - libvirt
+      - genisoimage
+    overrides:
+      deb:
+        dependencies:
+          - libvirt-daemon-system
+          - qemu-system-x86
+          - libguestfs-tools
+          - genisoimage
+      rpm:
+        dependencies:
+          - libvirt
+          - qemu-kvm
+          - guestfs-tools
+          - genisoimage
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  github:
+    owner: rhettg
+    name: tank
