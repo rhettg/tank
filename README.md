@@ -215,6 +215,16 @@ Instances remain unique.
 
 ---
 
+## Claude Code
+
+Tank includes a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill. Install it with:
+
+```bash
+npx skills add https://github.com/rhettg/tank
+```
+
+---
+
 ## Philosophy
 
 > Machines are cheap.
