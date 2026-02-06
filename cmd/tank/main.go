@@ -32,6 +32,10 @@ func resolveInstanceName(projectPath string, args []string) (string, error) {
 
 // ensureRunning makes sure the named instance is built, created, and running.
 func ensureRunning(projectPath string, instanceName string, cpus int, memory int) error {
+	if errs := build.Preflight(); build.PrintPreflightErrors(errs) {
+		return fmt.Errorf("preflight checks failed")
+	}
+
 	p, err := project.Load(projectPath)
 	if err != nil {
 		return fmt.Errorf("loading project: %w", err)
@@ -247,6 +251,10 @@ func main() {
 
 			if dryRun {
 				return build.PrintPlan(os.Stdout, p)
+			}
+
+			if errs := build.Preflight(); build.PrintPreflightErrors(errs) {
+				return fmt.Errorf("preflight checks failed")
 			}
 
 			buildImagePath, err := build.Build(p, os.Stdout)
