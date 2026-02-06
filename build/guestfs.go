@@ -42,13 +42,17 @@ func EnsureGuestfsAppliance(progress io.Writer) (string, error) {
                 return "", fmt.Errorf("creating guestfs cache directory: %w", err)
         }
 
+        fmt.Fprintf(progress, "  %s Guestfs appliance missing; attempting local build\n", symbolDot)
+
         if _, err := exec.LookPath("libguestfs-make-fixed-appliance"); err == nil {
                 fmt.Fprintf(progress, "  %s Building guestfs appliance\n", symbolDot)
                 if err := buildFixedAppliance(cacheDir, progress); err == nil {
                         fmt.Fprintf(progress, "  %s Guestfs appliance built %s\n", symbolSuccess, mutedStyle.Render(cacheDir))
                         return cacheDir, nil
                 }
-                fmt.Fprintf(progress, "  %s Failed to build guestfs appliance, falling back to download\n", symbolDot)
+                fmt.Fprintf(progress, "  %s Failed to build guestfs appliance, falling back to prebuilt download\n", symbolDot)
+        } else {
+                fmt.Fprintf(progress, "  %s libguestfs-make-fixed-appliance not available, falling back to prebuilt download\n", symbolDot)
         }
 
         fmt.Fprintf(progress, "  %s Downloading guestfs appliance\n", symbolDot)
