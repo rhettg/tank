@@ -20,9 +20,7 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - src: share/**/*
-        dst: share/tank/
-        strip_parent: true
+      - share/layers/**/*
 
 nfpms:
   - package_name: tank
@@ -39,6 +37,7 @@ nfpms:
     contents:
       - src: share/layers/
         dst: /usr/share/tank/layers/
+        type: tree
     overrides:
       deb:
         dependencies:

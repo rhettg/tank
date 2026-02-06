@@ -10,8 +10,8 @@ import (
 //
 // Search order:
 //  1. $TANK_SHARE_DIR (explicit override)
-//  2. <binary-dir>/share/tank/ (sibling — portable tarball archives)
-//  3. <binary-dir>/../share/tank/ (relative to binary — /usr/bin → /usr/share)
+//  2. <binary-dir>/share/ (sibling — portable tarball archives)
+//  3. <binary-dir>/../share/tank/ (relative to binary — /usr/bin → /usr/share/tank)
 //  4. /usr/share/tank/ (system packages — deb/rpm)
 func Dir() (string, error) {
 	// 1. Environment override
@@ -28,8 +28,8 @@ func Dir() (string, error) {
 		exe, err = filepath.EvalSymlinks(exe)
 		if err == nil {
 			binDir := filepath.Dir(exe)
-			// Sibling: <dir>/tank + <dir>/share/tank/ (portable tarball)
-			candidate := filepath.Join(binDir, "share", "tank")
+			// Sibling: <dir>/tank + <dir>/share/ (portable tarball)
+			candidate := filepath.Join(binDir, "share")
 			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 				return candidate, nil
 			}
