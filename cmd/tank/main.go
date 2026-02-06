@@ -13,6 +13,7 @@ import (
 	"github.com/rhettg/tank/build"
 	"github.com/rhettg/tank/instance"
 	"github.com/rhettg/tank/project"
+	"github.com/rhettg/tank/share"
 	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
@@ -173,8 +174,23 @@ func main() {
 				return fmt.Errorf("writing cloud-init.yaml: %w", err)
 			}
 
+			// Symlink shared user-ssh layer for SSH key injection at start time
+			userSSHTarget, err := share.LayerPath("00-user-ssh")
+			if err != nil {
+				return fmt.Errorf("finding shared user-ssh layer: %w", err)
+			}
+			layersDir := filepath.Join(dir, "layers")
+			if err := os.MkdirAll(layersDir, 0755); err != nil {
+				return fmt.Errorf("creating layers directory: %w", err)
+			}
+			userSSHLink := filepath.Join(layersDir, "20-user-ssh")
+			os.Remove(userSSHLink) // remove stale symlink if present
+			if err := os.Symlink(userSSHTarget, userSSHLink); err != nil {
+				return fmt.Errorf("symlinking user-ssh layer: %w", err)
+			}
+
 			// Create starter layer
-			layerDir := filepath.Join(dir, "layers", "10-base")
+			layerDir := filepath.Join(layersDir, "10-base")
 			if err := os.MkdirAll(layerDir, 0755); err != nil {
 				return fmt.Errorf("creating layer directory: %w", err)
 			}
@@ -185,7 +201,8 @@ func main() {
 
 			ui.PrintSuccess(os.Stdout, "Initialized project in %s", dir)
 			ui.PrintStep(os.Stdout, "BASE: %s", baseURL)
-			ui.PrintStep(os.Stdout, "cloud-init.yaml: generated with current user + SSH key")
+			ui.PrintStep(os.Stdout, "cloud-init.yaml: generated with current user")
+			ui.PrintStep(os.Stdout, "layers/20-user-ssh → %s", userSSHTarget)
 			ui.PrintStep(os.Stdout, "layers/10-base/install.sh: starter script")
 			return nil
 		},

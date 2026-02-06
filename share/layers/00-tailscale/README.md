@@ -12,7 +12,7 @@ Tailscale layer that automatically connects VMs to your tailnet using OAuth-gene
 
 ### Create an OAuth Client
 
-1. Go to [Tailscale Admin Console → Settings → OAuth clients](https://login.tailscale.com/admin/settings/oauth)
+1. Go to [Tailscale Admin Console -> Settings -> OAuth clients](https://login.tailscale.com/admin/settings/oauth)
 2. Create a new OAuth client with **auth_keys** scope
 3. Select the tags you want to assign to VMs (e.g., `tag:server`)
 4. Save the Client ID and Client Secret
@@ -31,7 +31,7 @@ Your tailnet's ACL policy must define the tags. Example:
 
 ## Environment Variables
 
-Set these before running `gi start`:
+Set these before running `tank start`:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -45,7 +45,7 @@ Set these before running `gi start`:
 Symlink into your project's layers directory:
 
 ```bash
-ln -s /path/to/examples/layers/00-tailscale layers/50-tailscale
+ln -s /path/to/share/layers/00-tailscale layers/50-tailscale
 ```
 
 Set environment variables and start:

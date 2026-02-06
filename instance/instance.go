@@ -13,8 +13,9 @@ import (
 	"github.com/rhettg/tank/ui"
 )
 
-// DefaultCloudInit generates a cloud-init config that creates a user matching
-// the current user with their SSH public key for passwordless access.
+// DefaultCloudInit generates a minimal cloud-init config that creates a user
+// matching the current user. SSH key injection is handled by the user-ssh
+// preboot layer rather than being baked into cloud-init at init time.
 func DefaultCloudInit() (string, error) {
 	// Get current username
 	currentUser, err := user.Current()
@@ -22,46 +23,15 @@ func DefaultCloudInit() (string, error) {
 		return "", fmt.Errorf("getting current user: %w", err)
 	}
 
-	// Find SSH public key
-	sshKey, err := findSSHPublicKey()
-	if err != nil {
-		return "", err
-	}
-
-	// Generate cloud-init YAML
+	// Generate cloud-init YAML (no SSH key — handled by preboot hook)
 	cloudInit := fmt.Sprintf(`#cloud-config
 users:
   - name: %s
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    ssh_authorized_keys:
-      - %s
-`, currentUser.Username, sshKey)
+`, currentUser.Username)
 
 	return cloudInit, nil
-}
-
-// findSSHPublicKey looks for an SSH public key in standard locations.
-func findSSHPublicKey() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("getting home directory: %w", err)
-	}
-
-	// Try common key types in order of preference
-	keyFiles := []string{
-		filepath.Join(home, ".ssh", "id_ed25519.pub"),
-		filepath.Join(home, ".ssh", "id_rsa.pub"),
-	}
-
-	for _, keyFile := range keyFiles {
-		content, err := os.ReadFile(keyFile)
-		if err == nil {
-			return strings.TrimSpace(string(content)), nil
-		}
-	}
-
-	return "", fmt.Errorf("no SSH public key found (tried ~/.ssh/id_ed25519.pub, ~/.ssh/id_rsa.pub)")
 }
 
 // Instance represents a running or stopped VM instance.
