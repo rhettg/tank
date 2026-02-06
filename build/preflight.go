@@ -35,17 +35,18 @@ func Preflight() []PreflightError {
 		errs = append(errs, *err)
 	}
 
-	// Check libvirtd is running
-	if err := checkLibvirtd(); err != nil {
-		errs = append(errs, *err)
-	}
-
 	// Check required tools
-	for _, tool := range []string{"virt-customize", "qemu-img", "virt-install"} {
+	toolHints := map[string]string{
+		"virsh":          "Install libvirt-clients (deb) or libvirt (rpm)",
+		"virt-customize": "Install libguestfs-tools (deb) or guestfs-tools (rpm)",
+		"qemu-img":       "Install qemu-utils (deb) or qemu-img (rpm)",
+		"virt-install":   "Install virtinst (deb) or virt-install (rpm)",
+	}
+	for _, tool := range []string{"virsh", "virt-customize", "qemu-img", "virt-install"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			errs = append(errs, PreflightError{
 				Message: fmt.Sprintf("%s not found in PATH", tool),
-				Hint:    "Install libguestfs-tools and virt-manager (e.g. sudo apt install libguestfs-tools virtinst)",
+				Hint:    toolHints[tool],
 			})
 		}
 	}
@@ -61,8 +62,15 @@ func Preflight() []PreflightError {
 	if !hasISO {
 		errs = append(errs, PreflightError{
 			Message: "no ISO creation tool found (need genisoimage, mkisofs, or xorriso)",
-			Hint:    "Install genisoimage (e.g. sudo apt install genisoimage)",
+			Hint:    "Install genisoimage or xorriso",
 		})
+	}
+
+	// Check libvirtd is running (only if virsh is available)
+	if _, err := exec.LookPath("virsh"); err == nil {
+		if err := checkLibvirtd(); err != nil {
+			errs = append(errs, *err)
+		}
 	}
 
 	return errs
