@@ -258,8 +258,13 @@ func CreateBuildImage(baseImagePath, projectHash string, progress io.Writer) (st
 // Each layer is applied in a separate virt-customize invocation for clear
 // error attribution and progress reporting.
 func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) error {
-	for _, layer := range layers {
-		args := []string{"-a", imagePath}
+        applianceDir, err := EnsureGuestfsAppliance(progress)
+        if err != nil {
+                return err
+        }
+
+        for _, layer := range layers {
+                args := []string{"-a", imagePath}
 
 		// Copy files first so scripts can reference them
 		if layer.HasFiles {
@@ -289,11 +294,14 @@ func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) e
 			continue
 		}
 
-		fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
+                fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
 
-		cmd := exec.Command("virt-customize", args...)
-		cmd.Stdout = progress
-		cmd.Stderr = progress
+                cmd := exec.Command("virt-customize", args...)
+                if applianceDir != "" {
+                        cmd.Env = append(os.Environ(), "LIBGUESTFS_PATH="+applianceDir)
+                }
+                cmd.Stdout = progress
+                cmd.Stderr = progress
 
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("applying layer %s: %w", layer.Name, err)

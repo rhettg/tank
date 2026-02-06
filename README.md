@@ -124,6 +124,20 @@ Tank requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM manage
 * `virt-install` (deb: `virtinst`, rpm: `virt-install`)
 * `genisoimage` (for cloud-init ISOs)
 
+### Guestfs appliance cache
+
+Tank relies on `virt-customize` (libguestfs). On some distros (notably Ubuntu),
+libguestfs cannot build its supermin appliance without a readable host kernel.
+Tank will try to use a fixed appliance in this order:
+
+* Cached appliance in `/var/lib/tank/guestfs/`
+* System appliance (eg. `/usr/lib/libguestfs/appliance`)
+* Build a fixed appliance with `libguestfs-make-fixed-appliance`
+* Download a prebuilt appliance from `download.libguestfs.org`
+
+You can override the appliance path by setting `LIBGUESTFS_PATH` before running
+`tank`.
+
 ### Groups
 
 Your user must be in the `libvirt` group:

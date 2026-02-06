@@ -66,6 +66,7 @@ func Preflight() []PreflightError {
 		})
 	}
 
+
 	// Check libvirtd is running (only if virsh is available)
 	if _, err := exec.LookPath("virsh"); err == nil {
 		if err := checkLibvirtd(); err != nil {
