@@ -1,4 +1,27 @@
-#!/usr/bin/env -S uv run --quiet --script
+#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_uv() {
+    if command -v uv >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+    else
+        echo "Error: uv not found and neither curl nor wget is available" >&2
+        exit 1
+    fi
+
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
+script_path="$(mktemp)"
+trap 'rm -f "$script_path"' EXIT
+
+cat >"$script_path" <<'PY'
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["pyyaml"]
@@ -72,3 +95,7 @@ data["users"] = users
 
 serialized = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
 cloud_init_path.write_text(prefix + serialized)
+PY
+
+ensure_uv
+uv run --quiet --script "$script_path"
