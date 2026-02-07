@@ -169,7 +169,7 @@ func downloadApplianceVersion(version string, destDir string, progress io.Writer
         if err := os.RemoveAll(destDir); err != nil {
                 return err
         }
-        if err := os.MkdirAll(destDir, 0755); err != nil {
+        if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
                 return err
         }
 
@@ -227,6 +227,11 @@ func downloadApplianceVersion(version string, destDir string, progress io.Writer
                 return errors.New("downloaded appliance missing expected files")
         }
 
+        if err := os.RemoveAll(destDir); err != nil {
+                os.Remove(tmpTar)
+                os.RemoveAll(tmpDir)
+                return err
+        }
         if err := os.Rename(extracted, destDir); err != nil {
                 os.Remove(tmpTar)
                 os.RemoveAll(tmpDir)
