@@ -80,8 +80,8 @@ Layers are directories under `layers/`.
 Each layer may contain:
 
 * `preboot` — executed on the host before instance creation (can edit cloud-init)
-* `install.sh` — executed during image build
-* `firstboot.sh` — executed on first VM boot
+* `install` — executed during image build (executable)
+* `firstboot` — executed on first VM boot (executable)
 * `files/` — filesystem overlay copied verbatim
 
 Example:
@@ -89,18 +89,18 @@ Example:
 ```
 layers/
 ├── 10-common/
-│   ├── install.sh
+│   ├── install
 │   └── files/
 │       └── etc/
 │           └── motd
 ├── 20-devtools/
-│   ├── install.sh
+│   ├── install
 │   └── files/
 │       └── usr/
 │           └── local/
 │               └── bin/
 └── 90-project/
-    └── install.sh
+    └── install
 ```
 
 ### Composition rules

@@ -24,7 +24,7 @@ injection without adding Tailscale-specific logic to Tank core.
 
 ### New Layer Hook
 
-Layers may include `preboot` alongside `install.sh`, `firstboot.sh`, and `files/`.
+Layers may include `preboot` alongside `install`, `firstboot`, and `files/`.
 
 Execution order follows existing layer ordering (lexicographic).
 Each `preboot` runs on the host before the VM is created.
@@ -60,9 +60,9 @@ Expose the following environment variables to `preboot`:
 ```
 layers/
 └── 40-tailscale/
-    ├── install.sh
+    ├── install
     ├── preboot
-    └── firstboot.sh
+    └── firstboot
 ```
 
 ### `preboot` (host-side)
@@ -79,7 +79,7 @@ write_files:
       TAILSCALE_AUTH_KEY=tskey-...
 ```
 
-### `firstboot.sh` (guest-side)
+### `firstboot` (guest-side)
 
 - Source `/run/tank/secrets.env`.
 - Run `tailscale up --auth-key "$TAILSCALE_AUTH_KEY" --hostname "$HOSTNAME"`.

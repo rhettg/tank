@@ -279,14 +279,14 @@ func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) e
 			}
 		}
 
-		// Run install.sh
+		// Run install
 		if layer.HasScript {
-			args = append(args, "--run", filepath.Join(layer.Path, "install.sh"))
+			args = append(args, "--run", filepath.Join(layer.Path, "install"))
 		}
 
-		// Register firstboot.sh
+		// Register firstboot
 		if layer.HasFirstboot {
-			args = append(args, "--firstboot", filepath.Join(layer.Path, "firstboot.sh"))
+			args = append(args, "--firstboot", filepath.Join(layer.Path, "firstboot"))
 		}
 
 		// Skip if nothing to do (only -a flag)
@@ -422,12 +422,12 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 
 		// Note if script would run
 		if layer.HasScript {
-			fmt.Fprintf(w, "      %s run %s\n", symbolDot, highlightStyle.Render("install.sh"))
+			fmt.Fprintf(w, "      %s run %s\n", symbolDot, highlightStyle.Render("install"))
 		}
 
 		// Note if firstboot script would run
 		if layer.HasFirstboot {
-			fmt.Fprintf(w, "      %s run %s (on first boot)\n", symbolDot, highlightStyle.Render("firstboot.sh"))
+			fmt.Fprintf(w, "      %s run %s (on first boot)\n", symbolDot, highlightStyle.Render("firstboot"))
 		}
 	}
 	fmt.Fprintln(w)

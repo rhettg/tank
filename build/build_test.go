@@ -75,8 +75,8 @@ func TestPrintPlan(t *testing.T) {
 	}
 
 	// Check script steps
-	if !strings.Contains(output, "run") || !strings.Contains(output, "install.sh") {
-		t.Error("output missing 'run install.sh' step")
+	if !strings.Contains(output, "run") || !strings.Contains(output, "install") {
+		t.Error("output missing 'run install' step")
 	}
 
 	// Check cloud-init section

@@ -13,22 +13,23 @@ import (
 
 // hashLayer computes a deterministic SHA256 hash of a layer's contents.
 // It includes:
-// - install.sh content (if exists)
+// - install content (if exists)
+// - firstboot content (if exists)
 // - For each file in files/ (sorted by path): relative path, file mode, content
 func hashLayer(layerPath string) (string, error) {
 	h := sha256.New()
 
-	// Hash install.sh if it exists
-	scriptPath := filepath.Join(layerPath, "install.sh")
+	// Hash install if it exists
+	scriptPath := filepath.Join(layerPath, "install")
 	if content, err := os.ReadFile(scriptPath); err == nil {
-		h.Write([]byte("script:install.sh\n"))
+		h.Write([]byte("script:install\n"))
 		h.Write(content)
 	}
 
-	// Hash firstboot.sh if it exists
-	firstbootPath := filepath.Join(layerPath, "firstboot.sh")
+	// Hash firstboot if it exists
+	firstbootPath := filepath.Join(layerPath, "firstboot")
 	if content, err := os.ReadFile(firstbootPath); err == nil {
-		h.Write([]byte("script:firstboot.sh\n"))
+		h.Write([]byte("script:firstboot\n"))
 		h.Write(content)
 	}
 

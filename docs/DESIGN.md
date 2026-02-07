@@ -64,7 +64,7 @@ tank/
 ├── BASE                    # Base image file or URL
 ├── layers/
 │   ├── 10-common/
-│   │   ├── install.sh      # Optional build script
+│   │   ├── install         # Optional build script
 │   │   └── files/          # Optional filesystem overlay
 │   ├── 20-devtools/
 │   └── 90-project/
@@ -83,7 +83,7 @@ Orchestrates the image build process:
 
 2. **Layer Application** (in lexicographic order)
    - For each layer:
-     - Extract `install.sh` if present
+     - Extract `install` if present
      - Extract `files/` directory if present
      - Create backing file for this layer's qcow2
      - Mount image, run script, apply files
@@ -196,7 +196,7 @@ instance/disk.qcow2 (mutable, per-VM)
 
 2. **Layer Execution**
    - Mount qcow2 as writable backing chain
-   - Execute `install.sh` if present
+   - Execute `install` if present
    - Script runs as root, full access to filesystem
    - Mount `files/` directory overlay
    - Unmount and commit
@@ -256,18 +256,18 @@ tank init --base fedora-41
 ./BASE                       # URL or path to base image
 ./layers/
 ├── 10-common/
-│   └── install.sh           # SSH server, default user, basic tools
+│   └── install              # SSH server, default user, basic tools
 └── 90-project/
-    └── install.sh           # Empty placeholder for user customization
+    └── install              # Empty placeholder for user customization
 ./cloud-init.yaml            # Optional user customization (generated template)
 ```
 
-**Default `10-common/install.sh`:**
-- Install OpenSSH server
-- Enable SSH at boot
-- Create default user (ubuntu, debian, etc. depending on base)
-- Grant sudo access
-- Set up DHCP for network
+**Default `10-common/install`:**
+1. Install OpenSSH server
+2. Enable SSH at boot
+3. Create default user (ubuntu, debian, etc. depending on base)
+4. Grant sudo access
+5. Set up DHCP for network
 
 **Generated `cloud-init.yaml`:**
 ```yaml
@@ -287,31 +287,31 @@ tank/              (arbitrary name)
 ├── BASE                # "https://..." or "./path/to/base.qcow2"
 ├── layers/
 │   ├── 10-common/
-│   │   ├── install.sh
+│   │   ├── install
 │   │   └── files/
 │   │       └── etc/motd
 │   └── 20-project/
-│       └── install.sh
+│       └── install
 └── cloud-init.yaml     (optional)
 ```
 
-**install.sh:**
-- Executed as root
-- Has full filesystem access
-- Script failure aborts build
-- Should be idempotent
+**install:**
+1. Executed as root
+2. Has full filesystem access
+3. Script failure aborts build
+4. Should be idempotent
 
 **files/ overlay:**
-- Copied directly to image root (/)
-- Later layers override earlier files
-- Preserves permissions/ownership
+1. Copied directly to image root (/)
+2. Later layers override earlier files
+3. Preserves permissions/ownership
 
 **cloud-init.yaml (optional override):**
-- User-data for first boot only
-- Does not modify base image
-- Per-instance customization
-- Standard cloud-init format
-- Tool auto-generates base (SSH keys, hostname) and merges user config
+1. User-data for first boot only
+2. Does not modify base image
+3. Per-instance customization
+4. Standard cloud-init format
+5. Tool auto-generates base (SSH keys, hostname) and merges user config
 
 ### Commands
 

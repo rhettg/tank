@@ -5,8 +5,8 @@ Tailscale layer that automatically connects VMs to your tailnet using OAuth-gene
 ## How it works
 
 1. **preboot** (host-side): Uses Tailscale OAuth API to generate a short-lived ephemeral auth key and injects it into cloud-init
-2. **install.sh** (image build): Installs Tailscale package
-3. **firstboot.sh** (VM boot): Authenticates to Tailscale using the injected auth key
+2. **install** (image build): Installs Tailscale package
+3. **firstboot** (VM boot): Authenticates to Tailscale using the injected auth key
 
 ## Prerequisites
 

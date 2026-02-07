@@ -93,12 +93,12 @@ func TestHashChangesOnModification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a layer with install.sh
+	// Create a layer with install
 	layerDir := filepath.Join(tmpDir, "layers", "10-test")
 	if err := os.MkdirAll(layerDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	scriptPath := filepath.Join(layerDir, "install.sh")
+	scriptPath := filepath.Join(layerDir, "install")
 	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\necho hello\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestProjectHashChanges(t *testing.T) {
 	if err := os.MkdirAll(layerDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(layerDir, "install.sh"), []byte("echo hello\n"), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(layerDir, "install"), []byte("echo hello\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 

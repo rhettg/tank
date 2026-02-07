@@ -3,7 +3,7 @@ name: tank
 description: >
   Usage of Tank, a CLI tool for building deterministic VM images and running disposable
   virtual machines using libvirt/KVM. Use when creating Tank projects, writing layers
-  (install.sh, firstboot.sh, preboot hooks, files/ overlays), configuring cloud-init,
+  (install, firstboot, preboot hooks, files/ overlays), configuring cloud-init,
   managing VM instances (start, stop, destroy, ssh), or troubleshooting libvirt/qemu issues.
   Triggers: tank commands, VM image building, layer creation, cloud-init configuration,
   preboot hooks, BASE file setup, .env files, libvirt/qemu/virt-customize issues.
@@ -51,22 +51,22 @@ myproject/
 ├── .env                    # Optional: env vars for preboot hooks
 └── layers/
     ├── 10-common/
-    │   ├── install.sh      # Runs as root during build (virt-customize)
-    │   ├── firstboot.sh    # Runs inside VM on first boot
+    │   ├── install         # Runs as root during build (virt-customize)
+    │   ├── firstboot       # Runs inside VM on first boot
     │   ├── preboot         # Runs on HOST before VM creation
     │   └── files/          # Filesystem overlay copied to /
     │       └── etc/motd
     ├── 20-devtools/
-    │   └── install.sh
+    │   └── install
     └── 90-project/
-        └── install.sh
+        └── install
 ```
 
 - No config files — the filesystem is the interface.
 - Layers apply in **lexicographic order**.
 - `files/` contents copy directly to image root `/`. Later layers override earlier files.
-- `install.sh` runs as root inside the image during build. Keep idempotent.
-- `firstboot.sh` runs inside the VM on first boot (via cloud-init). Does not affect the image.
+- `install` runs as root inside the image during build. Keep idempotent.
+- `firstboot` runs inside the VM on first boot (via cloud-init). Does not affect the image.
 - `preboot` runs on the **host** before VM creation.
 
 ## Preboot Hooks

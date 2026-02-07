@@ -199,15 +199,15 @@ func main() {
 				return fmt.Errorf("creating layer directory: %w", err)
 			}
 			installScript := "#!/bin/bash\nset -e\n\n# Add your base provisioning here\n"
-			if err := os.WriteFile(filepath.Join(layerDir, "install.sh"), []byte(installScript), 0755); err != nil {
-				return fmt.Errorf("writing install.sh: %w", err)
-			}
+				if err := os.WriteFile(filepath.Join(layerDir, "install"), []byte(installScript), 0755); err != nil {
+					return fmt.Errorf("writing install: %w", err)
+				}
 
 			ui.PrintSuccess(os.Stdout, "Initialized project in %s", dir)
 			ui.PrintStep(os.Stdout, "BASE: %s", baseURL)
 			ui.PrintStep(os.Stdout, "cloud-init.yaml: generated with current user")
 			ui.PrintStep(os.Stdout, "layers/20-user-ssh → %s", userSSHTarget)
-			ui.PrintStep(os.Stdout, "layers/10-base/install.sh: starter script")
+				ui.PrintStep(os.Stdout, "layers/10-base/install: starter script")
 			return nil
 		},
 	}
