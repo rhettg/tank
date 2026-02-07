@@ -42,6 +42,15 @@ func EnsureGuestfsAppliance(progress io.Writer) (string, error) {
                 return "", fmt.Errorf("creating guestfs cache directory: %w", err)
         }
 
+        if !kernelReadable() {
+                fmt.Fprintf(progress, "  %s Host kernel unreadable; skipping local build and downloading prebuilt appliance\n", symbolDot)
+                if err := downloadAppliance(version, cacheDir, progress); err != nil {
+                        return "", err
+                }
+                fmt.Fprintf(progress, "  %s Guestfs appliance downloaded %s\n", symbolSuccess, mutedStyle.Render(cacheDir))
+                return cacheDir, nil
+        }
+
         fmt.Fprintf(progress, "  %s Guestfs appliance missing; attempting local build\n", symbolDot)
 
         if _, err := exec.LookPath("libguestfs-make-fixed-appliance"); err == nil {
@@ -57,11 +66,8 @@ func EnsureGuestfsAppliance(progress io.Writer) (string, error) {
 
         fmt.Fprintf(progress, "  %s Downloading guestfs appliance\n", symbolDot)
         if err := downloadAppliance(version, cacheDir, progress); err != nil {
-                if kernelReadable() {
-                        fmt.Fprintf(progress, "  %s Falling back to supermin appliance\n", symbolDot)
-                        return "", nil
-                }
-                return "", err
+                fmt.Fprintf(progress, "  %s Download failed (%v); falling back to supermin appliance\n", symbolDot, err)
+                return "", nil
         }
         fmt.Fprintf(progress, "  %s Guestfs appliance downloaded %s\n", symbolSuccess, mutedStyle.Render(cacheDir))
         return cacheDir, nil
@@ -134,6 +140,32 @@ func buildFixedAppliance(dir string, progress io.Writer) error {
 }
 
 func downloadAppliance(version string, destDir string, progress io.Writer) error {
+        versions := applianceVersions(version)
+        if len(versions) == 0 {
+                return fmt.Errorf("cannot derive appliance version from %q", version)
+        }
+
+        var lastErr error
+        for _, candidate := range versions {
+                err := downloadApplianceVersion(candidate, destDir, progress)
+                if err == nil {
+                        return nil
+                }
+                if errors.Is(err, errApplianceNotFound) {
+                        lastErr = err
+                        continue
+                }
+                return err
+        }
+        if lastErr != nil {
+                return lastErr
+        }
+        return fmt.Errorf("unable to download guestfs appliance")
+}
+
+var errApplianceNotFound = errors.New("appliance not found")
+
+func downloadApplianceVersion(version string, destDir string, progress io.Writer) error {
         if err := os.RemoveAll(destDir); err != nil {
                 return err
         }
@@ -150,6 +182,9 @@ func downloadAppliance(version string, destDir string, progress io.Writer) error
         }
         defer resp.Body.Close()
 
+        if resp.StatusCode == http.StatusNotFound {
+                return fmt.Errorf("%w: %s", errApplianceNotFound, url)
+        }
         if resp.StatusCode != http.StatusOK {
                 return fmt.Errorf("download failed: %s", resp.Status)
         }
@@ -201,6 +236,36 @@ func downloadAppliance(version string, destDir string, progress io.Writer) error
         os.Remove(tmpTar)
         os.RemoveAll(tmpDir)
         return nil
+}
+
+func applianceVersions(version string) []string {
+        parts := strings.Split(version, ".")
+        if len(parts) < 2 {
+                return nil
+        }
+        major := parts[0]
+        minor := parts[1]
+        var versions []string
+        versions = append(versions, fmt.Sprintf("%s.%s.%s", major, minor, "0"))
+        if len(parts) >= 3 {
+                versions = append(versions, fmt.Sprintf("%s.%s.%s", major, minor, parts[2]))
+        }
+        versions = append(versions, fmt.Sprintf("%s.%s", major, minor))
+        versions = uniqueStrings(versions)
+        return versions
+}
+
+func uniqueStrings(values []string) []string {
+        seen := make(map[string]struct{}, len(values))
+        var out []string
+        for _, value := range values {
+                if _, ok := seen[value]; ok {
+                        continue
+                }
+                seen[value] = struct{}{}
+                out = append(out, value)
+        }
+        return out
 }
 
 func kernelReadable() bool {
