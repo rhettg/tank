@@ -1,5 +1,3 @@
 #cloud-config
 users:
-  - name: admin
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
+  - default
