@@ -24,8 +24,8 @@ func TestLoad(t *testing.T) {
 	}
 
 	// Check layers
-	if len(p.Layers) != 4 {
-		t.Fatalf("got %d layers, want 4", len(p.Layers))
+	if len(p.Layers) != 5 {
+		t.Fatalf("got %d layers, want 5", len(p.Layers))
 	}
 
 	// Check layer order and properties
@@ -38,6 +38,7 @@ func TestLoad(t *testing.T) {
 	}{
 		{"10-common", true, true, false, false},
 		{"20-devtools", true, false, false, false},
+		{"20-user-ssh", true, false, false, true},
 		{"50-preboot-test", false, false, false, true},
 		{"90-project", false, true, false, false},
 	}

@@ -53,14 +53,17 @@ func TestPrintPlan(t *testing.T) {
 	}
 
 	// Check layers section
-	if !strings.Contains(output, "Layers (4)") {
-		t.Error("output missing 'Layers (4)' section")
+	if !strings.Contains(output, "Layers (5)") {
+		t.Error("output missing 'Layers (5)' section")
 	}
 	if !strings.Contains(output, "10-common") {
 		t.Error("output missing 10-common layer")
 	}
 	if !strings.Contains(output, "20-devtools") {
 		t.Error("output missing 20-devtools layer")
+	}
+	if !strings.Contains(output, "20-user-ssh") {
+		t.Error("output missing 20-user-ssh layer")
 	}
 	if !strings.Contains(output, "90-project") {
 		t.Error("output missing 90-project layer")
