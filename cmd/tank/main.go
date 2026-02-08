@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/rhettg/tank/build"
@@ -28,6 +29,123 @@ func resolveInstanceName(projectPath string, args []string) (string, error) {
 		return "", fmt.Errorf("loading project: %w", err)
 	}
 	return filepath.Base(p.Root), nil
+}
+
+func diagnoseIPTimeout(inst *instance.Instance) string {
+	var details []string
+
+	if inst.IsRunning() {
+		details = append(details, "- VM is running (virsh domstate reports running)")
+	} else {
+		details = append(details, "- VM is not running (check boot logs via virsh console)")
+	}
+
+	netInfo := exec.Command("virsh", "-c", "qemu:///system", "net-info", "default")
+	if output, err := netInfo.CombinedOutput(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			switch key {
+			case "Active", "Autostart", "Bridge":
+				details = append(details, fmt.Sprintf("- libvirt default network %s: %s", strings.ToLower(key), value))
+			}
+		}
+	} else {
+		details = append(details, "- could not query libvirt default network")
+	}
+
+	if output, err := exec.Command("ip", "addr", "show", "virbr0").CombinedOutput(); err == nil {
+		if strings.Contains(string(output), "state UP") {
+			details = append(details, "- virbr0 is up")
+		} else {
+			details = append(details, "- virbr0 is not up")
+		}
+	} else {
+		details = append(details, "- could not inspect virbr0 on host")
+	}
+
+	leaseCmd := exec.Command("virsh", "-c", "qemu:///system", "net-dhcp-leases", "default")
+	if output, err := leaseCmd.CombinedOutput(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(lines) <= 1 {
+			details = append(details, "- no DHCP leases reported on default network")
+		} else {
+			details = append(details, fmt.Sprintf("- DHCP leases found: %d", len(lines)-1))
+		}
+	} else {
+		details = append(details, "- could not query DHCP leases")
+	}
+
+	details = append(details,
+		"- If the VM is running but no lease appears, a host firewall (UFW) may be blocking DHCP/DNS or forwarded traffic.")
+	details = append(details,
+		"- For UFW, allow DHCP/DNS on virbr0 and routed forwarding (see docs).")
+
+	return "\n" + strings.Join(details, "\n")
+}
+
+func ipWaitStageInfo(inst *instance.Instance, stage int) []string {
+	var details []string
+
+	stateCmd := exec.Command("virsh", "-c", "qemu:///system", "domstate", inst.Domain)
+	if output, err := stateCmd.CombinedOutput(); err == nil {
+		state := strings.TrimSpace(string(output))
+		details = append(details, fmt.Sprintf("- VM state: %s", state))
+	} else {
+		details = append(details, "- VM state: unknown (could not query)")
+	}
+
+	if output, err := exec.Command("ip", "link", "show", "virbr0").CombinedOutput(); err == nil {
+		if strings.Contains(string(output), "state UP") {
+			details = append(details, "- virbr0: up")
+		} else {
+			details = append(details, "- virbr0: down")
+		}
+	} else {
+		details = append(details, "- virbr0: unknown (could not inspect)")
+	}
+
+	if stage >= 2 {
+		netInfo := exec.Command("virsh", "-c", "qemu:///system", "net-info", "default")
+		if output, err := netInfo.CombinedOutput(); err == nil {
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, line := range lines {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				switch key {
+				case "Active", "Autostart", "Bridge":
+					details = append(details, fmt.Sprintf("- libvirt default network %s: %s", strings.ToLower(key), value))
+				}
+			}
+		} else {
+			details = append(details, "- libvirt default network: unknown (could not query)")
+		}
+	}
+
+	if stage >= 3 {
+		leaseCmd := exec.Command("virsh", "-c", "qemu:///system", "net-dhcp-leases", "default")
+		if output, err := leaseCmd.CombinedOutput(); err == nil {
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			if len(lines) <= 1 {
+				details = append(details, "- DHCP leases: none")
+			} else {
+				details = append(details, fmt.Sprintf("- DHCP leases: %d", len(lines)-1))
+			}
+		} else {
+			details = append(details, "- DHCP leases: unknown (could not query)")
+		}
+	}
+
+	return details
 }
 
 // ensureRunning makes sure the named instance is built, created, and running.
@@ -388,6 +506,7 @@ func main() {
 
 			// Get VM IP address with retries
 			var ip string
+			stageShown := map[int]bool{}
 			for attempt := 0; attempt < 30; attempt++ {
 				ip, err = inst.IPAddress()
 				if err != nil {
@@ -401,10 +520,42 @@ func main() {
 				} else {
 					fmt.Fprintf(os.Stderr, ".")
 				}
+
+				if attempt == 5 && !stageShown[1] {
+					stageShown[1] = true
+					fmt.Fprintln(os.Stderr)
+					ui.PrintInfo(os.Stderr, "Still waiting for DHCP. Quick check:")
+					for _, line := range ipWaitStageInfo(inst, 1) {
+						fmt.Fprintln(os.Stderr, "  "+line)
+					}
+					fmt.Fprint(os.Stderr, "Continuing to wait...")
+				}
+
+				if attempt == 10 && !stageShown[2] {
+					stageShown[2] = true
+					fmt.Fprintln(os.Stderr)
+					ui.PrintInfo(os.Stderr, "Still waiting. Network status:")
+					for _, line := range ipWaitStageInfo(inst, 2) {
+						fmt.Fprintln(os.Stderr, "  "+line)
+					}
+					fmt.Fprint(os.Stderr, "Continuing to wait...")
+				}
+
+				if attempt == 20 && !stageShown[3] {
+					stageShown[3] = true
+					fmt.Fprintln(os.Stderr)
+					ui.PrintInfo(os.Stderr, "Still waiting. DHCP lease status:")
+					for _, line := range ipWaitStageInfo(inst, 3) {
+						fmt.Fprintln(os.Stderr, "  "+line)
+					}
+					fmt.Fprint(os.Stderr, "Continuing to wait...")
+				}
+
 				time.Sleep(2 * time.Second)
 			}
 			if ip == "" {
-				return fmt.Errorf("timed out waiting for VM IP address")
+				diagnosis := diagnoseIPTimeout(inst)
+				return fmt.Errorf("timed out waiting for VM IP address.%s", diagnosis)
 			}
 
 			// Build SSH command
