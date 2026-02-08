@@ -165,6 +165,27 @@ This gives:
 * Setgid bit so new files/directories inherit the `libvirt` group
 * `libvirt-qemu` (the user QEMU runs as under system mode) can read images via world-readable permissions
 
+### Networking + firewall
+
+Tank uses libvirt's default network (`virbr0`) for DHCP, DNS, and NAT. If your host
+firewall blocks DHCP or routed traffic, VMs will boot but never get an IP address.
+
+The Debian/RPM packages apply the following on install:
+
+* ensure libvirt's `default` network is started and autostarted
+* add a UFW profile allowing DHCP/DNS on `virbr0`
+* add a routed UFW rule so guests can reach the outside world
+
+If you use UFW manually, the equivalent commands are:
+
+```bash
+sudo ufw app update Tank
+sudo ufw allow in on virbr0 to any app Tank
+sudo ufw route allow in on virbr0 out on <uplink>
+```
+
+Replace `<uplink>` with your host's outbound interface (e.g., `eth0` or `wlan0`).
+
 ---
 
 ## Storage model (qcow2 backing chains)

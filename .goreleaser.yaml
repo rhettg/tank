@@ -35,10 +35,14 @@ nfpms:
       - genisoimage
     scripts:
       postinstall: scripts/postinstall.sh
+      postremove: scripts/postremove.sh
     contents:
       - src: share/layers/
         dst: /usr/share/tank/layers/
         type: tree
+      - src: scripts/ufw-tank-profile
+        dst: /etc/ufw/applications.d/tank
+        type: config
     overrides:
       deb:
         dependencies:
