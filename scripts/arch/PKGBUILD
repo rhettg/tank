@@ -1,0 +1,46 @@
+# Maintainer: Rhett Garber <rhettg@users.noreply.github.com>
+
+pkgname=tank
+pkgver=0.1.8
+pkgrel=1
+pkgdesc="Deterministic VM images and disposable machines for libvirt"
+arch=(x86_64 aarch64)
+url="https://github.com/rhettg/tank"
+license=("MIT")
+install=tank.install
+depends=(libvirt qemu-base libguestfs virt-install)
+optdepends=(
+  "cdrtools: provides mkisofs for cloud-init ISOs"
+  "libisoburn: provides xorriso for cloud-init ISOs"
+)
+makedepends=(go)
+source=(
+  "${pkgname}-${pkgver}.tar.gz::https://github.com/rhettg/tank/archive/refs/tags/v${pkgver}.tar.gz"
+  "tank.install"
+)
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  cp "${srcdir}/tank.install" .
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  export CGO_ENABLED=0
+  go build -trimpath -ldflags="-s -w" -o tank ./cmd/tank
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  install -Dm755 tank "${pkgdir}/usr/bin/tank"
+
+  install -Dm755 scripts/postinstall.sh "${pkgdir}/usr/share/tank/packaging/postinstall"
+  install -Dm755 scripts/postremove.sh "${pkgdir}/usr/share/tank/packaging/postremove"
+
+  install -Dm644 scripts/ufw-tank-profile "${pkgdir}/etc/ufw/applications.d/tank"
+
+  install -d "${pkgdir}/usr/share/tank/layers"
+  cp -a share/layers/. "${pkgdir}/usr/share/tank/layers/"
+}

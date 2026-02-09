@@ -1,0 +1,62 @@
+#!/bin/bash
+# Arch package install hooks for tank.
+# Mirrors the Debian/RPM postinstall/postremove steps.
+
+set -e
+
+postinstall() {
+  local tank_dir="/var/lib/tank"
+
+  if [ ! -d "$tank_dir" ]; then
+    mkdir -p "$tank_dir"
+  fi
+
+  if getent group libvirt >/dev/null 2>&1; then
+    chown root:libvirt "$tank_dir"
+    chmod 2775 "$tank_dir"
+  fi
+
+  if command -v virsh >/dev/null 2>&1; then
+    virsh -c qemu:///system net-autostart default >/dev/null 2>&1 || true
+    virsh -c qemu:///system net-start default >/dev/null 2>&1 || true
+  fi
+
+  if command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+      if [ -f /etc/ufw/applications.d/tank ]; then
+        ufw app update Tank >/dev/null 2>&1 || true
+      fi
+      ufw allow in on virbr0 to any app Tank >/dev/null 2>&1 || true
+
+      local uplink
+      uplink=$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
+      if [ -n "$uplink" ]; then
+        ufw route allow in on virbr0 out on "$uplink" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+}
+
+postremove() {
+  if command -v ufw >/dev/null 2>&1; then
+    ufw delete allow in on virbr0 to any app Tank >/dev/null 2>&1 || true
+
+    local uplink
+    uplink=$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
+    if [ -n "$uplink" ]; then
+      ufw delete route allow in on virbr0 out on "$uplink" >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+post_install() {
+  postinstall
+}
+
+post_upgrade() {
+  postinstall
+}
+
+pre_remove() {
+  postremove
+}

@@ -122,7 +122,7 @@ Tank requires **libvirt**, **QEMU/KVM**, and uses `qemu:///system` for VM manage
 * `qemu-full` (or equivalent, provides `qemu-img`)
 * `guestfs-tools` (provides `virt-customize` for applying layers)
 * `virt-install` (deb: `virtinst`, rpm: `virt-install`)
-* `genisoimage` (for cloud-init ISOs)
+* `genisoimage` (or `mkisofs`/`xorriso` for cloud-init ISOs)
 
 ### Guestfs appliance cache
 
