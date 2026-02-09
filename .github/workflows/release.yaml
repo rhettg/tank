@@ -59,7 +59,7 @@ jobs:
               sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "${build_dir}/PKGBUILD"
 
               cd "${build_dir}"
-              makepkg --noconfirm --syncdeps --cleanbuild --clean --needed --skippgpcheck --asroot
+              makepkg --noconfirm --syncdeps --cleanbuild --clean --needed --skippgpcheck --nosign
 
               cp *.pkg.tar.zst /workspace/dist/arch/
             '
