@@ -47,21 +47,22 @@ jobs:
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
+            -e "VERSION=${version}" \
             archlinux:latest \
-            bash -lc "
+            bash -lc '
               set -euo pipefail
               pacman -Syu --noconfirm base-devel go git curl
 
-              build_dir=\"/tmp/arch-build\"
-              mkdir -p \"${build_dir}\"
-              cp /workspace/scripts/arch/PKGBUILD /workspace/scripts/arch/tank.install \"${build_dir}/\"
-              sed -i \"s/^pkgver=.*/pkgver=${version}/\" \"${build_dir}/PKGBUILD\"
+              build_dir="/tmp/arch-build"
+              mkdir -p "${build_dir}"
+              cp /workspace/scripts/arch/PKGBUILD /workspace/scripts/arch/tank.install "${build_dir}/"
+              sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "${build_dir}/PKGBUILD"
 
-              cd \"${build_dir}\"
+              cd "${build_dir}"
               makepkg --noconfirm --syncdeps --cleanbuild --clean --needed --skippgpcheck --asroot
 
               cp *.pkg.tar.zst /workspace/dist/arch/
-            "
+            '
 
           sha256sum dist/arch/*.pkg.tar.zst > dist/arch/checksums.txt
 
