@@ -41,6 +41,12 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG_VERSION#v}"
+          version="${version##*/}"
+          version="$(echo "${version}" | tr -cd '0-9.')"
+          if [ -z "${version}" ]; then
+            echo "Invalid tag version: ${TAG_VERSION}" >&2
+            exit 1
+          fi
 
           mkdir -p dist/arch
           git archive --format=tar.gz --prefix="tank-${version}/" "${TAG_VERSION}" > "dist/arch/tank-${version}.tar.gz"
