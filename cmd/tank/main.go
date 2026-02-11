@@ -235,6 +235,27 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		cloudInitContent = string(modifiedContent)
 	}
 
+	// Process volumes
+	blocks, networks, rootSize, err := project.CollectVolumes(p.Layers)
+	if err != nil {
+		return fmt.Errorf("collecting volumes: %w", err)
+	}
+
+	// Ensure block volumes exist (create qcow2 if needed)
+	newVolumes := make(map[string]bool)
+	for _, vol := range blocks {
+		isNew, err := instance.EnsureVolume(instanceName, vol, os.Stdout)
+		if err != nil {
+			return fmt.Errorf("ensuring volume %s: %w", vol.Name, err)
+		}
+		if isNew {
+			newVolumes[vol.Name] = true
+		}
+	}
+
+	// Append volume cloud-init stanzas
+	cloudInitContent += instance.VolumeCloudInit(blocks, networks, newVolumes)
+
 	// Create instance
 	ui.PrintInfo(os.Stdout, "Creating instance %s", ui.Bold.Render(instanceName))
 	inst, err := instance.Create(instanceName, buildImagePath, cloudInitContent, os.Stdout)
@@ -242,8 +263,23 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		return fmt.Errorf("creating instance: %w", err)
 	}
 
+	// Handle root disk size override
+	if rootSize != "" {
+		ui.PrintStep(os.Stdout, "Root disk size: %s", rootSize)
+		cmd := exec.Command("qemu-img", "resize", inst.DiskPath, rootSize)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("resizing root disk: %w: %s", err, output)
+		}
+	}
+
+	// Get volume disk/filesystem args for virt-install
+	volumeDisks, volumeFS, err := instance.VolumeDisksForStart(instanceName, blocks, networks)
+	if err != nil {
+		return fmt.Errorf("preparing volume args: %w", err)
+	}
+
 	// Start VM
-	if err := inst.Start(cpus, memory, os.Stdout); err != nil {
+	if err := inst.Start(cpus, memory, volumeDisks, volumeFS, os.Stdout); err != nil {
 		return fmt.Errorf("starting VM: %w", err)
 	}
 
@@ -680,6 +716,99 @@ func main() {
 		},
 	}
 
+	// Volume management commands
+	volumeCmd := &cobra.Command{
+		Use:   "volume",
+		Short: "Manage persistent volumes",
+	}
+
+	var volumeListAll bool
+	volumeListCmd := &cobra.Command{
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List volumes",
+		Long:    "List persistent volumes. By default shows volumes for the current project's instances.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var filter string
+			if !volumeListAll {
+				// Use current project's directory name as instance filter
+				absPath, err := filepath.Abs(".")
+				if err != nil {
+					return err
+				}
+				filter = filepath.Base(absPath)
+			}
+
+			volumes, err := instance.ListVolumes(filter)
+			if err != nil {
+				return fmt.Errorf("listing volumes: %w", err)
+			}
+
+			var rows []ui.VolumeRow
+			for _, vol := range volumes {
+				// Format size
+				sizeStr := formatVolumeSize(vol.Size)
+
+				// Check if instance exists
+				instanceStatus := vol.InstanceName
+				if !instance.Exists(vol.InstanceName) {
+					instanceStatus = vol.InstanceName + " " + ui.MutedStyle.Render("(orphaned)")
+				}
+
+				rows = append(rows, ui.VolumeRow{
+					Name:     vol.Name,
+					Size:     sizeStr,
+					Instance: instanceStatus,
+					Path:     vol.Path,
+				})
+			}
+
+			if len(rows) == 0 {
+				if volumeListAll {
+					fmt.Println(ui.MutedStyle.Render("No volumes found"))
+				} else {
+					fmt.Println(ui.MutedStyle.Render("No volumes found for this project"))
+				}
+				return nil
+			}
+
+			fmt.Println(ui.RenderVolumeTable(rows))
+			return nil
+		},
+	}
+	volumeListCmd.Flags().BoolVar(&volumeListAll, "all", false, "list all volumes including orphaned")
+
+	var volumeRmForce bool
+	volumeRmCmd := &cobra.Command{
+		Use:   "rm <name>",
+		Short: "Remove a volume",
+		Long:  "Remove a persistent volume by its full name (e.g. myproject-pgdata). Requires confirmation.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fullName := args[0]
+
+			// Confirm deletion
+			fmt.Printf("Remove volume %s? [y/N] ", ui.Bold.Render(fullName))
+			var response string
+			fmt.Scanln(&response)
+			if response != "y" && response != "Y" {
+				fmt.Println("Cancelled")
+				return nil
+			}
+
+			if err := instance.RemoveVolume(fullName, volumeRmForce); err != nil {
+				return fmt.Errorf("removing volume: %w", err)
+			}
+
+			ui.PrintSuccess(os.Stdout, "Volume %s removed", ui.Bold.Render(fullName))
+			return nil
+		},
+	}
+	volumeRmCmd.Flags().BoolVar(&volumeRmForce, "force", false, "force removal even if attached to a running instance")
+
+	volumeCmd.AddCommand(volumeListCmd)
+	volumeCmd.AddCommand(volumeRmCmd)
+
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(layersCmd)
@@ -689,6 +818,7 @@ func main() {
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(sshCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(volumeCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -719,4 +849,18 @@ func getVersion() string {
 	}
 
 	return version
+}
+
+// formatVolumeSize formats a file size in bytes to a human-readable string.
+func formatVolumeSize(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

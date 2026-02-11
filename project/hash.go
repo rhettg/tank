@@ -41,6 +41,14 @@ func hashLayer(layerPath string) (string, error) {
 		}
 	}
 
+	// Hash volumes/ directory contents
+	volumesPath := filepath.Join(layerPath, "volumes")
+	if _, err := os.Stat(volumesPath); err == nil {
+		if err := hashVolumesDir(h, volumesPath); err != nil {
+			return "", err
+		}
+	}
+
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
@@ -84,6 +92,34 @@ func hashFilesDir(h io.Writer, filesPath string) error {
 		// Write path, mode, and content to hash
 		fmt.Fprintf(h, "file:%s\n", relPath)
 		fmt.Fprintf(h, "mode:%o\n", info.Mode().Perm())
+		h.Write(content)
+	}
+
+	return nil
+}
+
+// hashVolumesDir walks the volumes/ directory and hashes all files deterministically.
+func hashVolumesDir(h io.Writer, volumesPath string) error {
+	entries, err := os.ReadDir(volumesPath)
+	if err != nil {
+		return err
+	}
+
+	// Collect and sort names for deterministic ordering
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		content, err := os.ReadFile(filepath.Join(volumesPath, name))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "volume:%s\n", name)
 		h.Write(content)
 	}
 

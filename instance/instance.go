@@ -207,7 +207,7 @@ ethernets:
 }
 
 // Start starts the VM using virt-install.
-func (inst *Instance) Start(cpus, memoryMB int, progress io.Writer) error {
+func (inst *Instance) Start(cpus, memoryMB int, volumeDisks []string, volumeFS []string, progress io.Writer) error {
 	ui.PrintStep(progress, "Starting VM %s", ui.Bold.Render(inst.Domain))
 
 	args := []string{
@@ -226,6 +226,16 @@ func (inst *Instance) Start(cpus, memoryMB int, progress io.Writer) error {
 	// Add cloud-init ISO if present
 	if inst.ISOPath != "" {
 		args = append(args, "--disk", inst.ISOPath+",device=cdrom")
+	}
+
+	// Add volume disks
+	for _, volDisk := range volumeDisks {
+		args = append(args, "--disk", volDisk)
+	}
+
+	// Add filesystem passthroughs (9p, virtiofs)
+	for _, fs := range volumeFS {
+		args = append(args, "--filesystem", fs)
 	}
 
 	cmd := exec.Command("virt-install", args...)
@@ -329,6 +339,11 @@ func (inst *Instance) Destroy(progress io.Writer) error {
 	ui.PrintStep(progress, "Removing instance files")
 	if err := os.RemoveAll(inst.Dir); err != nil {
 		return fmt.Errorf("removing instance directory: %w", err)
+	}
+
+	// Report retained volumes
+	if summary := RetainedVolumeSummary(inst.Name); summary != "" {
+		ui.PrintInfo(progress, "%s", summary)
 	}
 
 	return nil

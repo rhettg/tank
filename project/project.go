@@ -3,6 +3,7 @@ package project
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,13 +12,14 @@ import (
 
 // Layer represents a single layer in the project.
 type Layer struct {
-        Name         string // "10-common"
-        Path         string // Full path to layer directory
-        HasScript    bool   // install exists
-        HasFiles     bool   // files/ directory exists
-        HasFirstboot bool   // firstboot exists
-        HasPreboot   bool   // preboot exists (host-side hook)
-        ContentHash  string // SHA256 of layer contents
+        Name         string   // "10-common"
+        Path         string   // Full path to layer directory
+        HasScript    bool     // install exists
+        HasFiles     bool     // files/ directory exists
+        HasFirstboot bool     // firstboot exists
+        HasPreboot   bool     // preboot exists (host-side hook)
+        ContentHash  string   // SHA256 of layer contents
+        Volumes      []Volume // Volume declarations from volumes/ directory
 }
 
 // Project represents a tank project.
@@ -126,6 +128,12 @@ func Load(path string) (*Project, error) {
 		layer.ContentHash, err = hashLayer(layerPath)
 		if err != nil {
 			return nil, err
+		}
+
+		// Load volume declarations
+		layer.Volumes, err = loadLayerVolumes(layerPath, layer.Name)
+		if err != nil {
+			return nil, fmt.Errorf("loading volumes for layer %s: %w", layer.Name, err)
 		}
 
 		p.Layers = append(p.Layers, layer)

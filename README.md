@@ -83,6 +83,7 @@ Each layer may contain:
 * `install` — executed during image build (executable)
 * `firstboot` — executed on first VM boot (executable)
 * `files/` — filesystem overlay copied verbatim
+* `volumes/` — persistent storage and network mount declarations
 
 Example:
 
@@ -219,6 +220,100 @@ This allows:
 * multiple instances from the same build
 * fast instance creation
 * changes isolated per instance
+
+---
+
+## Volumes: persistent storage that survives rebuilds
+
+Layers can declare **persistent volumes** that are created, formatted, and mounted
+automatically. Destroy a VM, rebuild it, start it again — your data is still there.
+
+### Layer volumes
+
+Add a `volumes/` directory to any layer. Each file declares one volume:
+
+```
+layers/50-postgres/
+├── install
+├── firstboot
+└── volumes/
+    └── pgdata
+```
+
+**`layers/50-postgres/volumes/pgdata`:**
+```
+mount: /var/lib/postgresql
+size: 20G
+```
+
+That's it. Tank will:
+
+* create the qcow2 volume if it doesn't exist
+* attach it to the VM
+* format and mount it before your `firstboot` script runs
+
+The postgres layer can be **symlinked into any project** and it brings its
+storage requirement with it.
+
+### Root disk sizing
+
+Any layer can declare a root disk size requirement:
+
+```
+layers/50-big-models/
+└── volumes/
+    └── root
+```
+
+**`layers/50-big-models/volumes/root`:**
+```
+size: 200G
+```
+
+When multiple layers declare root sizes, Tank uses the largest value. A
+machine-learning layer that needs 200G just says so — any project that
+includes it gets the right disk size.
+
+### Network mounts
+
+Network filesystems use the same `volumes/` directory:
+
+```
+layers/90-nfs/volumes/shared
+  mount: /mnt/shared
+  source: 192.168.1.10:/export/data
+  type: nfs
+  options: rw,soft
+```
+
+If the file has a `source:`, it's a network mount. If it has a `size:`, it's
+a block volume.
+
+### The rebuild experience
+
+```
+$ tank destroy
+▸ Force stopping VM tank-myproject
+▸ Removing instance files
+✓ Instance myproject destroyed
+  Persistent volumes retained: pgdata (20G)
+
+$ tank start
+▸ Creating overlay disk
+▸ Reattaching volume pgdata (20G) → /var/lib/postgresql
+▸ Starting VM tank-myproject
+✓ Instance myproject started
+```
+
+### Volume management
+
+```bash
+tank volume ls                    # volumes for instances in this project
+tank volume ls --all              # all volumes, including orphaned
+tank volume rm myproject-pgdata   # delete a volume (with confirmation)
+```
+
+See [docs/VOLUMES.md](docs/VOLUMES.md) for the full volume reference.
 
 ---
 

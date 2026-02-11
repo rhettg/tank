@@ -35,12 +35,13 @@ func TestLoad(t *testing.T) {
 		hasFiles     bool
 		hasFirstboot bool
 		hasPreboot   bool
+		numVolumes   int
 	}{
-		{"10-common", true, true, false, false},
-		{"20-devtools", true, false, false, false},
-		{"20-user-ssh", true, false, false, true},
-		{"50-preboot-test", false, false, false, true},
-		{"90-project", false, true, false, false},
+		{"10-common", true, true, false, false, 2},  // has volumes/root and volumes/testdata
+		{"20-devtools", true, false, false, false, 0},
+		{"20-user-ssh", true, false, false, true, 0},
+		{"50-preboot-test", false, false, false, true, 0},
+		{"90-project", false, true, false, false, 0},
 	}
 
 	for i, tt := range tests {
@@ -63,6 +64,18 @@ func TestLoad(t *testing.T) {
 		if layer.ContentHash == "" {
 			t.Errorf("layer[%d].ContentHash should not be empty", i)
 		}
+		if len(layer.Volumes) != tt.numVolumes {
+			t.Errorf("layer[%d].Volumes count = %d, want %d", i, len(layer.Volumes), tt.numVolumes)
+		}
+	}
+
+	// Verify the root volume in 10-common
+	rootVol := p.Layers[0].Volumes[0]
+	if rootVol.Kind != VolumeRoot {
+		t.Errorf("10-common volume kind = %v, want VolumeRoot", rootVol.Kind)
+	}
+	if rootVol.Size != "80G" {
+		t.Errorf("10-common root size = %q, want %q", rootVol.Size, "80G")
 	}
 }
 

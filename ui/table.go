@@ -86,3 +86,45 @@ func RenderLayerTable(base string, rows []LayerRow) string {
 
 	return out
 }
+
+// VolumeRow represents a row in the volume table
+type VolumeRow struct {
+	Name     string
+	Size     string
+	Instance string
+	Path     string
+}
+
+// RenderVolumeTable renders a styled table of volumes
+func RenderVolumeTable(rows []VolumeRow) string {
+	if len(rows) == 0 {
+		return MutedStyle.Render("No volumes found")
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(Primary).
+		Padding(0, 1)
+
+	cellStyle := lipgloss.NewStyle().
+		Padding(0, 1)
+
+	data := make([][]string, len(rows))
+	for i, row := range rows {
+		data[i] = []string{row.Name, row.Size, row.Instance, row.Path}
+	}
+
+	t := table.New().
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(Muted)).
+		Headers("NAME", "SIZE", "INSTANCE", "PATH").
+		Rows(data...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return cellStyle
+		})
+
+	return t.Render()
+}
