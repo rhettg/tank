@@ -26,7 +26,7 @@ nfpms:
     vendor: rhettg
     maintainer: Rhett Garber
     description: Tank - deterministic VM images and disposable machines for libvirt
-    license: MIT
+    license: ISC
     formats:
       - deb
       - rpm
