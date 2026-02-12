@@ -292,8 +292,11 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "tank",
 		Short: ui.Title.Render("Tank") + " — deterministic VM images",
-		Long:  "Build and run disposable virtual machines using libvirt and KVM.",
+		Long:  "Build and run virtual machines using libvirt and KVM.",
 	}
+
+	var projectPath string
+	rootCmd.PersistentFlags().StringVarP(&projectPath, "project", "p", ".", "path to project directory")
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -303,7 +306,6 @@ func main() {
 		},
 	}
 
-	var initProjectPath string
 	initCmd := &cobra.Command{
 		Use:   "init <base-url>",
 		Short: "Initialize a new tank project",
@@ -311,7 +313,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			baseURL := args[0]
-			dir := initProjectPath
+			dir := projectPath
 
 			// Don't overwrite existing project
 			if _, err := os.Stat(filepath.Join(dir, "BASE")); err == nil {
@@ -353,21 +355,19 @@ func main() {
 				return fmt.Errorf("creating layer directory: %w", err)
 			}
 			installScript := "#!/bin/bash\nset -e\n\n# Add your base provisioning here\n"
-				if err := os.WriteFile(filepath.Join(layerDir, "install"), []byte(installScript), 0755); err != nil {
-					return fmt.Errorf("writing install: %w", err)
-				}
+			if err := os.WriteFile(filepath.Join(layerDir, "install"), []byte(installScript), 0755); err != nil {
+				return fmt.Errorf("writing install: %w", err)
+			}
 
 			ui.PrintSuccess(os.Stdout, "Initialized project in %s", dir)
 			ui.PrintStep(os.Stdout, "BASE: %s", baseURL)
 			ui.PrintStep(os.Stdout, "cloud-init.yaml: generated with current user")
 			ui.PrintStep(os.Stdout, "layers/20-user-ssh → %s", userSSHTarget)
-				ui.PrintStep(os.Stdout, "layers/10-base/install: starter script")
+			ui.PrintStep(os.Stdout, "layers/10-base/install: starter script")
 			return nil
 		},
 	}
-	initCmd.Flags().StringVarP(&initProjectPath, "project", "p", ".", "path to project directory")
 
-	var projectPath string
 	layersCmd := &cobra.Command{
 		Use:   "layers",
 		Short: "List project layers and their content hashes",
@@ -390,15 +390,13 @@ func main() {
 			return nil
 		},
 	}
-	layersCmd.Flags().StringVarP(&projectPath, "project", "p", ".", "path to project directory")
 
-	var buildProjectPath string
 	var dryRun bool
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a VM image from project layers",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := project.Load(buildProjectPath)
+			p, err := project.Load(projectPath)
 			if err != nil {
 				return fmt.Errorf("loading project: %w", err)
 			}
@@ -420,36 +418,32 @@ func main() {
 			return nil
 		},
 	}
-	buildCmd.Flags().StringVarP(&buildProjectPath, "project", "p", ".", "path to project directory")
 	buildCmd.Flags().BoolVar(&dryRun, "dry-run", false, "show build plan without executing")
 
-	var startProjectPath string
 	var startCPUs int
 	var startMemory int
 	startCmd := &cobra.Command{
 		Use:   "start [name]",
-		Short: "Build image (if needed) and start the VM",
+		Short: "Start the VM (builds image if needed)",
 		Long:  "Start a VM instance. Default name is the project directory name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			instanceName := ""
 			if len(args) > 0 {
 				instanceName = args[0]
 			}
-			return ensureRunning(startProjectPath, instanceName, startCPUs, startMemory)
+			return ensureRunning(projectPath, instanceName, startCPUs, startMemory)
 		},
 	}
-	startCmd.Flags().StringVarP(&startProjectPath, "project", "p", ".", "path to project directory")
 	startCmd.Flags().IntVar(&startCPUs, "cpus", 2, "number of CPUs")
 	startCmd.Flags().IntVar(&startMemory, "memory", 4096, "memory in MB")
 
-	var stopProjectPath string
 	stopCmd := &cobra.Command{
 		Use:   "stop [name]",
 		Short: "Stop the VM",
 		Long:  "Stop a VM instance (graceful shutdown). Default name is the project directory name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Determine instance name
-			instanceName, err := resolveInstanceName(stopProjectPath, args)
+			instanceName, err := resolveInstanceName(projectPath, args)
 			if err != nil {
 				return err
 			}
@@ -472,16 +466,14 @@ func main() {
 			return nil
 		},
 	}
-	stopCmd.Flags().StringVarP(&stopProjectPath, "project", "p", ".", "path to project directory")
 
-	var destroyProjectPath string
 	destroyCmd := &cobra.Command{
 		Use:   "destroy [name]",
 		Short: "Stop and remove the VM completely",
 		Long:  "Destroy a VM instance (force stop and remove all files). Default name is the project directory name.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Determine instance name
-			instanceName, err := resolveInstanceName(destroyProjectPath, args)
+			instanceName, err := resolveInstanceName(projectPath, args)
 			if err != nil {
 				return err
 			}
@@ -500,9 +492,7 @@ func main() {
 			return nil
 		},
 	}
-	destroyCmd.Flags().StringVarP(&destroyProjectPath, "project", "p", ".", "path to project directory")
 
-	var sshProjectPath string
 	sshCmd := &cobra.Command{
 		Use:   "ssh [name] [-- ssh_args...]",
 		Short: "SSH into a running VM (auto-starts if needed)",
@@ -519,13 +509,13 @@ func main() {
 			}
 
 			// Determine instance name
-			instanceName, err := resolveInstanceName(sshProjectPath, nameArgs)
+			instanceName, err := resolveInstanceName(projectPath, nameArgs)
 			if err != nil {
 				return err
 			}
 
 			// Ensure instance is running (build/create/start as needed)
-			if err := ensureRunning(sshProjectPath, instanceName, 2, 4096); err != nil {
+			if err := ensureRunning(projectPath, instanceName, 2, 4096); err != nil {
 				return err
 			}
 
@@ -652,11 +642,10 @@ func main() {
 			return nil
 		},
 	}
-	sshCmd.Flags().StringVarP(&sshProjectPath, "project", "p", ".", "path to project directory")
 
 	listCmd := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls", "ps"},
+		Use:     "ls",
+		Aliases: []string{"list", "ps"},
 		Short:   "List all VM instances",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cacheDir, err := build.CacheDir()
@@ -716,6 +705,61 @@ func main() {
 		},
 	}
 
+	makeVolumeListCmd := func(use string, aliases []string, volumeListAll *bool) *cobra.Command {
+		return &cobra.Command{
+			Use:     use,
+			Aliases: aliases,
+			Short:   "List volumes",
+			Long:    "List persistent volumes. By default shows volumes for the current project's instances.",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				var filter string
+				if !*volumeListAll {
+					// Use current project's directory name as instance filter
+					absPath, err := filepath.Abs(".")
+					if err != nil {
+						return err
+					}
+					filter = filepath.Base(absPath)
+				}
+
+				volumes, err := instance.ListVolumes(filter)
+				if err != nil {
+					return fmt.Errorf("listing volumes: %w", err)
+				}
+
+				var rows []ui.VolumeRow
+				for _, vol := range volumes {
+					// Format size
+					sizeStr := formatVolumeSize(vol.Size)
+					// Check if instance exists
+					instanceStatus := vol.InstanceName
+					if !instance.Exists(vol.InstanceName) {
+						instanceStatus = vol.InstanceName + " " + ui.MutedStyle.Render("(orphaned)")
+					}
+
+					rows = append(rows, ui.VolumeRow{
+						Name:     vol.Name,
+						Size:     sizeStr,
+						Instance: instanceStatus,
+						Path:     vol.Path,
+					})
+				}
+
+				if len(rows) == 0 {
+					if *volumeListAll {
+						fmt.Println(ui.MutedStyle.Render("No volumes found"))
+					} else {
+						fmt.Println(ui.MutedStyle.Render("No volumes found for this project"))
+					}
+					return nil
+				}
+
+				fmt.Println(ui.RenderVolumeTable(rows))
+				return nil
+			},
+		}
+	}
+
 	// Volume management commands
 	volumeCmd := &cobra.Command{
 		Use:   "volume",
@@ -723,59 +767,7 @@ func main() {
 	}
 
 	var volumeListAll bool
-	volumeListCmd := &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list"},
-		Short:   "List volumes",
-		Long:    "List persistent volumes. By default shows volumes for the current project's instances.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var filter string
-			if !volumeListAll {
-				// Use current project's directory name as instance filter
-				absPath, err := filepath.Abs(".")
-				if err != nil {
-					return err
-				}
-				filter = filepath.Base(absPath)
-			}
-
-			volumes, err := instance.ListVolumes(filter)
-			if err != nil {
-				return fmt.Errorf("listing volumes: %w", err)
-			}
-
-			var rows []ui.VolumeRow
-			for _, vol := range volumes {
-				// Format size
-				sizeStr := formatVolumeSize(vol.Size)
-
-				// Check if instance exists
-				instanceStatus := vol.InstanceName
-				if !instance.Exists(vol.InstanceName) {
-					instanceStatus = vol.InstanceName + " " + ui.MutedStyle.Render("(orphaned)")
-				}
-
-				rows = append(rows, ui.VolumeRow{
-					Name:     vol.Name,
-					Size:     sizeStr,
-					Instance: instanceStatus,
-					Path:     vol.Path,
-				})
-			}
-
-			if len(rows) == 0 {
-				if volumeListAll {
-					fmt.Println(ui.MutedStyle.Render("No volumes found"))
-				} else {
-					fmt.Println(ui.MutedStyle.Render("No volumes found for this project"))
-				}
-				return nil
-			}
-
-			fmt.Println(ui.RenderVolumeTable(rows))
-			return nil
-		},
-	}
+	volumeListCmd := makeVolumeListCmd("ls", []string{"list"}, &volumeListAll)
 	volumeListCmd.Flags().BoolVar(&volumeListAll, "all", false, "list all volumes including orphaned")
 
 	var volumeRmForce bool
