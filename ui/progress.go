@@ -201,6 +201,105 @@ func RunWithSpinner(message string, fn func() error) error {
 	return nil
 }
 
+// WaitForFunc is a polling function that returns (done, error).
+// It is called repeatedly until it returns true or an error.
+type WaitForFunc func() (bool, error)
+
+type waitTickMsg struct{}
+
+// waitModel is a bubbletea model for polling with a spinner
+type waitModel struct {
+	spinner   spinner.Model
+	message   string
+	pollFn    WaitForFunc
+	done      bool
+	err       error
+	startTime time.Time
+	interval  time.Duration
+}
+
+func newWaitModel(message string, interval time.Duration, fn WaitForFunc) waitModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(Primary)
+	return waitModel{
+		spinner:   s,
+		message:   message,
+		pollFn:    fn,
+		startTime: time.Now(),
+		interval:  interval,
+	}
+}
+
+func (m waitModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, func() tea.Msg { return waitTickMsg{} })
+}
+
+func (m waitModel) poll() tea.Cmd {
+	return tea.Tick(m.interval, func(t time.Time) tea.Msg {
+		return waitTickMsg{}
+	})
+}
+
+func (m waitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.done = true
+			m.err = fmt.Errorf("interrupted")
+			return m, tea.Quit
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case waitTickMsg:
+		done, err := m.pollFn()
+		if err != nil || done {
+			m.done = true
+			m.err = err
+			return m, tea.Quit
+		}
+		return m, m.poll()
+	}
+	return m, nil
+}
+
+func (m waitModel) View() string {
+	if m.done {
+		if m.err != nil {
+			return fmt.Sprintf("  %s %s\n", SymbolError, m.message)
+		}
+		return fmt.Sprintf("  %s %s\n", SymbolSuccess, m.message)
+	}
+	elapsed := MutedStyle.Render(fmt.Sprintf("(%s)", formatDuration(time.Since(m.startTime))))
+	return fmt.Sprintf("  %s %s %s\n", m.spinner.View(), m.message, elapsed)
+}
+
+func formatDuration(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	return fmt.Sprintf("%dm%02ds", s/60, s%60)
+}
+
+// RunWithWaiting shows a spinner while polling a function at the given interval.
+// The polling function should return (true, nil) when done, (false, nil) to keep waiting,
+// or (false, err) to stop with an error.
+func RunWithWaiting(w io.Writer, message string, interval time.Duration, fn WaitForFunc) error {
+	m := newWaitModel(message, interval, fn)
+	p := tea.NewProgram(m, tea.WithOutput(w))
+
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+
+	final := result.(waitModel)
+	return final.err
+}
+
 // PrintHeader prints a styled header
 func PrintHeader(w io.Writer, title string) {
 	fmt.Fprintln(w, Title.Render(title))

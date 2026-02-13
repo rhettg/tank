@@ -113,65 +113,6 @@ func diagnoseIPTimeout(inst *instance.Instance) string {
 	return "\n" + strings.Join(details, "\n")
 }
 
-func ipWaitStageInfo(inst *instance.Instance, stage int) []string {
-	var details []string
-
-	stateCmd := exec.Command("virsh", "-c", "qemu:///system", "domstate", inst.Domain)
-	if output, err := stateCmd.CombinedOutput(); err == nil {
-		state := strings.TrimSpace(string(output))
-		details = append(details, fmt.Sprintf("- VM state: %s", state))
-	} else {
-		details = append(details, "- VM state: unknown (could not query)")
-	}
-
-	if output, err := exec.Command("ip", "link", "show", "virbr0").CombinedOutput(); err == nil {
-		if strings.Contains(string(output), "state UP") {
-			details = append(details, "- virbr0: up")
-		} else {
-			details = append(details, "- virbr0: down")
-		}
-	} else {
-		details = append(details, "- virbr0: unknown (could not inspect)")
-	}
-
-	if stage >= 2 {
-		netInfo := exec.Command("virsh", "-c", "qemu:///system", "net-info", "default")
-		if output, err := netInfo.CombinedOutput(); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-			for _, line := range lines {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) != 2 {
-					continue
-				}
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-				switch key {
-				case "Active", "Autostart", "Bridge":
-					details = append(details, fmt.Sprintf("- libvirt default network %s: %s", strings.ToLower(key), value))
-				}
-			}
-		} else {
-			details = append(details, "- libvirt default network: unknown (could not query)")
-		}
-	}
-
-	if stage >= 3 {
-		leaseCmd := exec.Command("virsh", "-c", "qemu:///system", "net-dhcp-leases", "default")
-		if output, err := leaseCmd.CombinedOutput(); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-			if len(lines) <= 1 {
-				details = append(details, "- DHCP leases: none")
-			} else {
-				details = append(details, fmt.Sprintf("- DHCP leases: %d", len(lines)-1))
-			}
-		} else {
-			details = append(details, "- DHCP leases: unknown (could not query)")
-		}
-	}
-
-	return details
-}
-
 // ensureRunning makes sure the named instance is built, created, and running.
 func ensureRunning(projectPath string, instanceName string, cpus int, memory int) error {
 	if errs := build.Preflight(); build.PrintPreflightErrors(errs) {
@@ -553,56 +494,25 @@ func main() {
 
 			// Get VM IP address with retries
 			var ip string
-			stageShown := map[int]bool{}
-			for attempt := 0; attempt < 30; attempt++ {
-				ip, err = inst.IPAddress()
+			ipAttempt := 0
+			err = ui.RunWithWaiting(os.Stderr, "Waiting for IP address", 2*time.Second, func() (bool, error) {
+				ipAttempt++
+				addr, err := inst.IPAddress()
 				if err != nil {
-					return err
+					return false, err
 				}
-				if ip != "" {
-					break
+				if addr != "" {
+					ip = addr
+					return true, nil
 				}
-				if attempt == 0 {
-					fmt.Fprintf(os.Stderr, "Waiting for VM to get an IP address...")
-				} else {
-					fmt.Fprintf(os.Stderr, ".")
+				if ipAttempt >= 30 {
+					diagnosis := diagnoseIPTimeout(inst)
+					return false, fmt.Errorf("timed out waiting for VM IP address.%s", diagnosis)
 				}
-
-				if attempt == 5 && !stageShown[1] {
-					stageShown[1] = true
-					fmt.Fprintln(os.Stderr)
-					ui.PrintInfo(os.Stderr, "Still waiting for DHCP. Quick check:")
-					for _, line := range ipWaitStageInfo(inst, 1) {
-						fmt.Fprintln(os.Stderr, "  "+line)
-					}
-					fmt.Fprint(os.Stderr, "Continuing to wait...")
-				}
-
-				if attempt == 10 && !stageShown[2] {
-					stageShown[2] = true
-					fmt.Fprintln(os.Stderr)
-					ui.PrintInfo(os.Stderr, "Still waiting. Network status:")
-					for _, line := range ipWaitStageInfo(inst, 2) {
-						fmt.Fprintln(os.Stderr, "  "+line)
-					}
-					fmt.Fprint(os.Stderr, "Continuing to wait...")
-				}
-
-				if attempt == 20 && !stageShown[3] {
-					stageShown[3] = true
-					fmt.Fprintln(os.Stderr)
-					ui.PrintInfo(os.Stderr, "Still waiting. DHCP lease status:")
-					for _, line := range ipWaitStageInfo(inst, 3) {
-						fmt.Fprintln(os.Stderr, "  "+line)
-					}
-					fmt.Fprint(os.Stderr, "Continuing to wait...")
-				}
-
-				time.Sleep(2 * time.Second)
-			}
-			if ip == "" {
-				diagnosis := diagnoseIPTimeout(inst)
-				return fmt.Errorf("timed out waiting for VM IP address.%s", diagnosis)
+				return false, nil
+			})
+			if err != nil {
+				return err
 			}
 
 			// Build SSH command
@@ -617,34 +527,26 @@ func main() {
 			sshArgs = append(sshArgs, extraSSHArgs...)
 
 			// Wait for SSH to become available by probing quietly
-			sshReady := false
-			for attempt := 0; attempt < 30; attempt++ {
+			sshAttempt := 0
+			err = ui.RunWithWaiting(os.Stderr, "Waiting for SSH", 2*time.Second, func() (bool, error) {
+				sshAttempt++
 				probe := exec.Command("ssh", append(sshArgs, "true")...)
 				if output, err := probe.CombinedOutput(); err != nil {
 					var exitErr *exec.ExitError
 					if errors.As(err, &exitErr) && exitErr.ExitCode() == 255 {
-						if attempt == 0 {
-							fmt.Fprintf(os.Stderr, "Waiting for SSH to become available...")
-						} else {
-							fmt.Fprintf(os.Stderr, ".")
+						if sshAttempt >= 30 {
+							return false, fmt.Errorf("timed out waiting for SSH connection")
 						}
-						time.Sleep(2 * time.Second)
-						continue
+						return false, nil
 					}
 					// Non-connection error (e.g. auth failure)
 					fmt.Fprintf(os.Stderr, "%s", output)
-					return fmt.Errorf("SSH failed: %w", err)
+					return false, fmt.Errorf("SSH failed: %w", err)
 				}
-				// Probe succeeded — SSH is ready
-				if attempt > 0 {
-					fmt.Fprintf(os.Stderr, "\n")
-				}
-				sshReady = true
-				break
-			}
-			if !sshReady {
-				fmt.Fprintf(os.Stderr, "\n")
-				return fmt.Errorf("timed out waiting for SSH connection")
+				return true, nil
+			})
+			if err != nil {
+				return err
 			}
 
 			// Run the real interactive SSH session
