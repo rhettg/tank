@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	defaultBuildMemMB  = 8192
-	defaultRootSize    = "50G"
-	buildMemEnvVar     = "TANK_BUILD_MEM_MB"
-	buildRootSizeEnv   = "TANK_BUILD_ROOT_SIZE"
-	guestfsMemEnvVar   = "LIBGUESTFS_MEMSIZE"
+	defaultBuildMemMB = 8192
+	defaultRootSize   = "50G"
+	buildMemEnvVar    = "TANK_BUILD_MEM_MB"
+	buildRootSizeEnv  = "TANK_BUILD_ROOT_SIZE"
+	guestfsMemEnvVar  = "LIBGUESTFS_MEMSIZE"
 )
 
 func buildMemSizeMB() (int, error) {
@@ -39,6 +39,11 @@ func resolveRootSize(rootSize string) (string, error) {
 	}
 
 	return defaultRootSize, nil
+}
+
+// ResolveRootSize exposes the configured root size, falling back to defaults.
+func ResolveRootSize(rootSize string) (string, error) {
+	return resolveRootSize(rootSize)
 }
 
 func guestfsEnv(applianceDir string) ([]string, error) {
