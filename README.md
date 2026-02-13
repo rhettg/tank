@@ -148,13 +148,17 @@ You can override the appliance path by setting `LIBGUESTFS_PATH` before running
 
 ### Groups
 
-Your user must be in the `libvirt` group:
+Your user must be in the `libvirt` and `kvm` groups:
 
 ```bash
-sudo usermod -aG libvirt $USER
+sudo usermod -aG libvirt,kvm $USER
 ```
 
-Log out and back in for the group to take effect.
+Log out and back in for the groups to take effect.
+
+The `libvirt` group grants access to `virsh` and the system connection. The `kvm`
+group grants access to `/dev/kvm` for hardware-accelerated virtualization — without
+it, QEMU falls back to software emulation (TCG), which is dramatically slower.
 
 ### Storage directory
 
