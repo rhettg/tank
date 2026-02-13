@@ -58,10 +58,8 @@ if key_path is None:
 ssh_key = key_path.read_text().strip()
 
 raw = cloud_init_path.read_text()
-prefix = ""
 if raw.startswith("#cloud-config"):
-    prefix = "#cloud-config\n"
-    raw = raw[len(prefix):]
+    raw = raw.split("\n", 1)[1] if "\n" in raw else ""
 
 data = yaml.safe_load(raw) if raw.strip() else {}
 if data is None:
@@ -94,7 +92,7 @@ else:
 data["users"] = users
 
 serialized = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
-cloud_init_path.write_text(prefix + serialized)
+cloud_init_path.write_text("#cloud-config\n" + serialized)
 PY
 
 ensure_uv

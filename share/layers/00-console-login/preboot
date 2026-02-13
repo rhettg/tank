@@ -45,15 +45,14 @@ if not cloud_init_path.exists():
     raise SystemExit(f"TANK_CLOUD_INIT does not exist: {cloud_init_path}")
 
 raw = cloud_init_path.read_text()
-prefix = ""
 if raw.startswith("#cloud-config"):
-    prefix = "#cloud-config\n"
-    raw = raw[len(prefix):]
+    raw = raw.split("\n", 1)[1] if "\n" in raw else ""
 
 data = yaml.safe_load(raw) if raw.strip() else {}
 if data is None:
     data = {}
 
+# Ensure the tank user exists in users list
 users = data.get("users")
 if users is None:
     users = []
@@ -68,7 +67,6 @@ for user in users:
 
 payload = {
     "name": "tank",
-    "plain_text_passwd": "tank",
     "lock_passwd": False,
     "sudo": "ALL=(ALL) NOPASSWD:ALL",
     "shell": "/bin/bash",
@@ -81,8 +79,21 @@ else:
 
 data["users"] = users
 
+# Use chpasswd to set the plain text password (the users block only supports hashed passwords)
+chpasswd = data.get("chpasswd")
+if chpasswd is None:
+    chpasswd = {}
+
+chpasswd_users = chpasswd.get("users", [])
+# Remove any existing entry for tank
+chpasswd_users = [u for u in chpasswd_users if not (isinstance(u, dict) and u.get("name") == "tank")]
+chpasswd_users.append({"name": "tank", "password": "tank", "type": "text"})
+chpasswd["users"] = chpasswd_users
+chpasswd["expire"] = False
+data["chpasswd"] = chpasswd
+
 serialized = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
-cloud_init_path.write_text(prefix + serialized)
+cloud_init_path.write_text("#cloud-config\n" + serialized)
 PY
 
 ensure_uv
