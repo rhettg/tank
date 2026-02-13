@@ -195,137 +195,44 @@ func BuildImageExists(projectHash string) bool {
 	return err == nil
 }
 
-// CreateBuildImage copies the base image to create a new build image.
-// Progress is written to the provided writer.
-// Returns the path to the new build image.
-func CreateBuildImage(baseImagePath, projectHash string, progress io.Writer) (string, error) {
-	destPath, err := BuildImagePath(projectHash)
-	if err != nil {
-		return "", err
-	}
-
-	// Check if already exists
-	if _, err := os.Stat(destPath); err == nil {
-		fmt.Fprintf(progress, "  Using existing build image: %s\n", destPath)
-		return destPath, nil
-	}
-
-	// Create builds directory
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return "", err
-	}
-
-	fmt.Fprintf(progress, "  Source: %s\n", baseImagePath)
-
-	// Open source file
-	src, err := os.Open(baseImagePath)
-	if err != nil {
-		return "", err
-	}
-	defer src.Close()
-
-	// Get source size for progress
-	srcInfo, err := src.Stat()
-	if err != nil {
-		return "", err
-	}
-
-	// Write to temp file, then rename (atomic)
-	tmpPath := destPath + ".tmp"
-	dst, err := os.Create(tmpPath)
-	if err != nil {
-		return "", err
-	}
-
-	// Copy with progress tracking
-	_, err = copyWithProgress(dst, src, srcInfo.Size(), progress)
-	dst.Close()
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", err
-	}
-
-	// Rename to final path
-	if err := os.Rename(tmpPath, destPath); err != nil {
-		return "", err
-	}
-
-	fmt.Fprintf(progress, "  Created: %s\n", destPath)
-	return destPath, nil
+// FinalBuildHash returns the hash that identifies the final build image.
+// This is the hash of the last build stage in the chain.
+func FinalBuildHash(p *project.Project) string {
+	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
+	stages := p.BuildChain(rootSize)
+	return stages[len(stages)-1].Hash
 }
 
-// ApplyLayers applies project layers to a build image using virt-customize.
-// Each layer is applied in a separate virt-customize invocation for clear
-// error attribution and progress reporting.
-func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) error {
-        applianceDir, err := EnsureGuestfsAppliance(progress)
-        if err != nil {
-                return err
-        }
+// Build runs the full build pipeline: download base image, create build stages,
+// apply layers incrementally. Returns the path to the final build image.
+// Each layer produces a cached qcow2 overlay so that adding a new layer only
+// requires applying that layer on top of the previous cached stage.
+func Build(p *project.Project, progress io.Writer) (string, error) {
+	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
+	stages := p.BuildChain(rootSize)
+	finalHash := stages[len(stages)-1].Hash
 
-        for _, layer := range layers {
-                args := []string{"-a", imagePath}
+	// Check if final build is already cached
+	finalPath, err := BuildImagePath(finalHash)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(finalPath); err == nil {
+		fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
+		return finalPath, nil
+	}
 
-		// Copy files first so scripts can reference them
-		if layer.HasFiles {
-			filesDir := filepath.Join(layer.Path, "files")
-			entries, err := os.ReadDir(filesDir)
-			if err != nil {
-				return fmt.Errorf("reading files dir for layer %s: %w", layer.Name, err)
-			}
-			for _, entry := range entries {
-				src := filepath.Join(filesDir, entry.Name())
-				args = append(args, "--copy-in", src+":/")
-			}
-		}
-
-		// Run install
-		if layer.HasScript {
-			args = append(args, "--run", filepath.Join(layer.Path, "install"))
-		}
-
-		// Register firstboot
-		if layer.HasFirstboot {
-			args = append(args, "--firstboot", filepath.Join(layer.Path, "firstboot"))
-		}
-
-		// Skip if nothing to do (only -a flag)
-		if len(args) <= 2 {
+	// Find the deepest cached stage
+	resumeIdx := -1
+	for i := len(stages) - 1; i >= 0; i-- {
+		p, err := BuildImagePath(stages[i].Hash)
+		if err != nil {
 			continue
 		}
-
-                fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
-
-                cmd := exec.Command("virt-customize", args...)
-                if applianceDir != "" {
-                        cmd.Env = append(os.Environ(), "LIBGUESTFS_PATH="+applianceDir)
-                }
-                cmd.Stdout = progress
-                cmd.Stderr = progress
-
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("applying layer %s: %w", layer.Name, err)
+		if _, err := os.Stat(p); err == nil {
+			resumeIdx = i
+			break
 		}
-	}
-	return nil
-}
-
-// Build runs the full build pipeline: download base image, copy to build image,
-// apply layers. Returns the path to the final build image.
-// If the build image already exists (cached), it returns early.
-func Build(p *project.Project, progress io.Writer) (string, error) {
-	// Collect root size from volume declarations for build-time resize
-	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
-	projectHash := p.Hash()
-
-	// Check cache
-	destPath, err := BuildImagePath(projectHash)
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(destPath); err == nil {
-		fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(projectHash[:8]))
-		return destPath, nil
 	}
 
 	// Download base image
@@ -336,67 +243,148 @@ func Build(p *project.Project, progress io.Writer) (string, error) {
 	}
 	fmt.Println()
 
-	// Create builds directory
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	// Ensure builds directory exists
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
 		return "", err
 	}
 
-	// Copy base to temp build image
-	fmt.Fprintf(progress, "%s Creating build image %s\n", symbolInfo, mutedStyle.Render(projectHash[:8]))
-	tmpPath := destPath + ".tmp"
-
-	src, err := os.Open(baseImagePath)
-	if err != nil {
-		return "", err
-	}
-	srcInfo, err := src.Stat()
-	if err != nil {
-		src.Close()
-		return "", err
-	}
-
-	dst, err := os.Create(tmpPath)
-	if err != nil {
-		src.Close()
-		return "", err
-	}
-
-	_, err = copyWithProgress(dst, src, srcInfo.Size(), progress)
-	dst.Close()
-	src.Close()
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", err
-	}
-
-	// Resize build image if root volume size is declared
-	if rootSize != "" {
-		fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, rootSize)
-		cmd := exec.Command("qemu-img", "resize", tmpPath, rootSize)
-		cmd.Stderr = progress
-		if err := cmd.Run(); err != nil {
-			os.Remove(tmpPath)
-			return "", fmt.Errorf("resizing build image: %w", err)
+	// Build the base stage if not cached
+	baseStage := stages[0]
+	if resumeIdx < 0 {
+		basePath, err := BuildImagePath(baseStage.Hash)
+		if err != nil {
+			return "", err
 		}
-	}
+		fmt.Fprintf(progress, "%s Creating base stage %s\n", symbolInfo, mutedStyle.Render(baseStage.Hash[:8]))
+		tmpPath := basePath + ".tmp"
 
-	// Apply layers
-	if len(p.Layers) > 0 {
-		fmt.Fprintln(progress)
-		fmt.Fprintf(progress, "%s Applying layers\n", symbolInfo)
-		if err := ApplyLayers(tmpPath, p.Layers, progress); err != nil {
+		src, err := os.Open(baseImagePath)
+		if err != nil {
+			return "", err
+		}
+		srcInfo, err := src.Stat()
+		if err != nil {
+			src.Close()
+			return "", err
+		}
+
+		dst, err := os.Create(tmpPath)
+		if err != nil {
+			src.Close()
+			return "", err
+		}
+
+		_, err = copyWithProgress(dst, src, srcInfo.Size(), progress)
+		dst.Close()
+		src.Close()
+		if err != nil {
 			os.Remove(tmpPath)
 			return "", err
 		}
+
+		if rootSize != "" {
+			fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, rootSize)
+			cmd := exec.Command("qemu-img", "resize", tmpPath, rootSize)
+			cmd.Stderr = progress
+			if err := cmd.Run(); err != nil {
+				os.Remove(tmpPath)
+				return "", fmt.Errorf("resizing build image: %w", err)
+			}
+		}
+
+		if err := os.Rename(tmpPath, basePath); err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
+		resumeIdx = 0
+	} else {
+		fmt.Fprintf(progress, "%s Cached up to stage %s\n", symbolSuccess, mutedStyle.Render(stages[resumeIdx].Hash[:8]))
 	}
 
-	// Atomic rename
-	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
-		return "", err
+	// Apply remaining layer stages as overlays
+	if resumeIdx < len(stages)-1 {
+		applianceDir, err := EnsureGuestfsAppliance(progress)
+		if err != nil {
+			return "", err
+		}
+
+		fmt.Fprintln(progress)
+		fmt.Fprintf(progress, "%s Applying layers\n", symbolInfo)
+
+		for i := resumeIdx + 1; i < len(stages); i++ {
+			stage := stages[i]
+			prevPath, err := BuildImagePath(stages[i-1].Hash)
+			if err != nil {
+				return "", err
+			}
+
+			stagePath, err := BuildImagePath(stage.Hash)
+			if err != nil {
+				return "", err
+			}
+
+			tmpPath := stagePath + ".tmp"
+			if err := CreateOverlay(tmpPath, prevPath); err != nil {
+				return "", fmt.Errorf("creating overlay for stage %s: %w", stage.Hash[:8], err)
+			}
+
+			// Apply this single layer
+			if err := applyLayer(tmpPath, stage.Layer, applianceDir, progress); err != nil {
+				os.Remove(tmpPath)
+				return "", err
+			}
+
+			if err := os.Rename(tmpPath, stagePath); err != nil {
+				os.Remove(tmpPath)
+				return "", err
+			}
+		}
 	}
 
-	return destPath, nil
+	return finalPath, nil
+}
+
+// applyLayer applies a single layer to an image using virt-customize.
+func applyLayer(imagePath string, layer *project.Layer, applianceDir string, progress io.Writer) error {
+	args := []string{"-a", imagePath}
+
+	if layer.HasFiles {
+		filesDir := filepath.Join(layer.Path, "files")
+		entries, err := os.ReadDir(filesDir)
+		if err != nil {
+			return fmt.Errorf("reading files dir for layer %s: %w", layer.Name, err)
+		}
+		for _, entry := range entries {
+			src := filepath.Join(filesDir, entry.Name())
+			args = append(args, "--copy-in", src+":/")
+		}
+	}
+
+	if layer.HasScript {
+		args = append(args, "--run", filepath.Join(layer.Path, "install"))
+	}
+
+	if layer.HasFirstboot {
+		args = append(args, "--firstboot", filepath.Join(layer.Path, "firstboot"))
+	}
+
+	if len(args) <= 2 {
+		return nil
+	}
+
+	fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
+
+	cmd := exec.Command("virt-customize", args...)
+	if applianceDir != "" {
+		cmd.Env = append(os.Environ(), "LIBGUESTFS_PATH="+applianceDir)
+	}
+	cmd.Stdout = progress
+	cmd.Stderr = progress
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("applying layer %s: %w", layer.Name, err)
+	}
+	return nil
 }
 
 // PrintPlan prints the build plan for dry-run output.
@@ -453,17 +441,17 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 	}
 
 	// Output section
-	projectHash := p.Hash()
+	buildHash := FinalBuildHash(p)
 	fmt.Fprintf(w, "%s\n", headerStyle.Render("Output"))
-	fmt.Fprintf(w, "  %s hash %s\n", symbolDot, highlightStyle.Render(projectHash[:8]))
+	fmt.Fprintf(w, "  %s hash %s\n", symbolDot, highlightStyle.Render(buildHash[:8]))
 
-	buildPath, err := BuildImagePath(projectHash)
+	buildPath, err := BuildImagePath(buildHash)
 	if err != nil {
-		buildPath = "/var/lib/tank/builds/" + projectHash + ".qcow2"
+		buildPath = "/var/lib/tank/builds/" + buildHash + ".qcow2"
 	}
 	fmt.Fprintf(w, "  %s path %s\n", symbolDot, mutedStyle.Render(buildPath))
 
-	if BuildImageExists(projectHash) {
+	if BuildImageExists(buildHash) {
 		fmt.Fprintf(w, "  %s cached (skip build)\n", symbolSuccess)
 	} else {
 		fmt.Fprintf(w, "  %s would build\n", symbolInfo)

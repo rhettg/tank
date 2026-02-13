@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -223,59 +222,4 @@ func TestBuildImageExists(t *testing.T) {
 	}
 }
 
-func TestCreateBuildImage(t *testing.T) {
-	if err := os.MkdirAll("/var/lib/tank/builds", 0755); err != nil {
-		t.Skipf("cannot create storage directory (need write access to /var/lib/tank): %v", err)
-	}
 
-	// Create a fake base image in a temp directory
-	tmpDir := t.TempDir()
-	baseDir := filepath.Join(tmpDir, "base")
-	os.MkdirAll(baseDir, 0755)
-	baseImagePath := filepath.Join(baseDir, "test.qcow2")
-	testContent := []byte("fake qcow2 image content")
-	if err := os.WriteFile(baseImagePath, testContent, 0644); err != nil {
-		t.Fatalf("writing test base image: %v", err)
-	}
-
-	// Clean up build image after test
-	projectHash := "testhash123"
-	defer os.Remove("/var/lib/tank/builds/" + projectHash + ".qcow2")
-
-	// Create build image
-	var progress bytes.Buffer
-	buildPath, err := CreateBuildImage(baseImagePath, projectHash, &progress)
-	if err != nil {
-		t.Fatalf("CreateBuildImage() error: %v", err)
-	}
-
-	// Verify build image was created
-	content, err := os.ReadFile(buildPath)
-	if err != nil {
-		t.Fatalf("reading build image: %v", err)
-	}
-	if string(content) != string(testContent) {
-		t.Errorf("build image content = %q, want %q", content, testContent)
-	}
-
-	// Verify progress output
-	if !strings.Contains(progress.String(), "Source:") {
-		t.Error("progress missing 'Source:'")
-	}
-	if !strings.Contains(progress.String(), "Created:") {
-		t.Error("progress missing 'Created:'")
-	}
-
-	// Test cached case
-	progress.Reset()
-	cachedPath, err := CreateBuildImage(baseImagePath, projectHash, &progress)
-	if err != nil {
-		t.Fatalf("CreateBuildImage() cached error: %v", err)
-	}
-	if cachedPath != buildPath {
-		t.Errorf("cached path = %q, want %q", cachedPath, buildPath)
-	}
-	if !strings.Contains(progress.String(), "Using existing build image") {
-		t.Error("progress missing 'Using existing build image' for cached build")
-	}
-}

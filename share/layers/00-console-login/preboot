@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ensure_uv() {
+    if command -v uv >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+    else
+        echo "Error: uv not found and neither curl nor wget is available" >&2
+        exit 1
+    fi
+
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
+script_path="$(mktemp)"
+trap 'rm -f "$script_path"' EXIT
+
+cat >"$script_path" <<'PY'
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pyyaml"]
+# ///
+import os
+from pathlib import Path
+
+import yaml
+
+
+def get_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"{name} is not set")
+    return value
+
+
+cloud_init_path = Path(get_env("TANK_CLOUD_INIT"))
+
+if not cloud_init_path.exists():
+    raise SystemExit(f"TANK_CLOUD_INIT does not exist: {cloud_init_path}")
+
+raw = cloud_init_path.read_text()
+prefix = ""
+if raw.startswith("#cloud-config"):
+    prefix = "#cloud-config\n"
+    raw = raw[len(prefix):]
+
+data = yaml.safe_load(raw) if raw.strip() else {}
+if data is None:
+    data = {}
+
+users = data.get("users")
+if users is None:
+    users = []
+elif not isinstance(users, list):
+    raise SystemExit("cloud-init 'users' must be a list")
+
+existing = None
+for user in users:
+    if isinstance(user, dict) and user.get("name") == "tank":
+        existing = user
+        break
+
+payload = {
+    "name": "tank",
+    "plain_text_passwd": "tank",
+    "lock_passwd": False,
+    "sudo": "ALL=(ALL) NOPASSWD:ALL",
+    "shell": "/bin/bash",
+}
+
+if existing is None:
+    users.append(payload)
+else:
+    existing.update(payload)
+
+data["users"] = users
+
+serialized = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+cloud_init_path.write_text(prefix + serialized)
+PY
+
+ensure_uv
+uv run --quiet --script "$script_path"

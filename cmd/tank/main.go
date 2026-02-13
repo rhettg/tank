@@ -642,7 +642,7 @@ func main() {
 				return err
 			}
 
-			projectHash := p.Hash()
+			projectHash := build.FinalBuildHash(p)
 			buildCached := build.BuildImageExists(projectHash)
 			baseCached := build.BaseImageCached(p.Base)
 

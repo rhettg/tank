@@ -52,6 +52,41 @@ func (p *Project) Hash() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// BuildStage represents a cached intermediate build state.
+type BuildStage struct {
+	Hash  string // cumulative hash up to and including this stage
+	Layer *Layer // nil for the base stage
+}
+
+// BuildChain computes the sequence of build stages for incremental caching.
+// Each stage has a cumulative hash covering the base image, root size, and all
+// build-relevant layers up to that point. Layers that don't affect the build
+// image (preboot-only, no install/files/firstboot) are skipped.
+func (p *Project) BuildChain(rootSize string) []BuildStage {
+	// Base stage
+	h := sha256.New()
+	h.Write([]byte("base:" + p.Base + "\n"))
+	h.Write([]byte("rootSize:" + rootSize + "\n"))
+	baseHash := hex.EncodeToString(h.Sum(nil))
+
+	stages := []BuildStage{{Hash: baseHash, Layer: nil}}
+
+	prevHash := baseHash
+	for i := range p.Layers {
+		layer := &p.Layers[i]
+		if !layer.HasScript && !layer.HasFiles && !layer.HasFirstboot {
+			continue
+		}
+		h := sha256.New()
+		h.Write([]byte(prevHash))
+		h.Write([]byte("layer:" + layer.Name + ":" + layer.ContentHash + "\n"))
+		prevHash = hex.EncodeToString(h.Sum(nil))
+		stages = append(stages, BuildStage{Hash: prevHash, Layer: layer})
+	}
+
+	return stages
+}
+
 // Load reads a project from the given path.
 func Load(path string) (*Project, error) {
 	absPath, err := filepath.Abs(path)
