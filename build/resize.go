@@ -2,6 +2,7 @@ package build
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
@@ -146,11 +147,9 @@ func parseGuestfishInspection(output string) ([]mountEntry, []fsEntry, lvmInfo, 
 			continue
 		case "PVS":
 			section = "pvs"
-			lvm.HasLVM = true
 			continue
 		case "LVS":
 			section = "lvs"
-			lvm.HasLVM = true
 			continue
 		}
 
@@ -168,10 +167,12 @@ func parseGuestfishInspection(output string) ([]mountEntry, []fsEntry, lvmInfo, 
 		case "pvs":
 			if strings.HasPrefix(line, "/dev/") {
 				lvm.PVs = append(lvm.PVs, line)
+				lvm.HasLVM = true
 			}
 		case "lvs":
 			if strings.HasPrefix(line, "/dev/") {
 				lvm.LVs = append(lvm.LVs, splitLV(line))
+				lvm.HasLVM = true
 			}
 		}
 	}
@@ -267,7 +268,7 @@ func parsePartitionDevice(device string) (string, int, bool) {
 
 func growRootFilesystemPartition(imagePath, applianceDir string, root rootFS, partDevice string, partNum int, progress io.Writer) error {
 	fmt.Fprintf(progress, "  %s Growing root partition %s\n", symbolDot, root.Device)
-	cmd := exec.Command("guestfish", "-a", imagePath, "-i")
+	cmd := exec.Command("guestfish", "-a", imagePath)
 	env, err := guestfsEnv(applianceDir)
 	if err != nil {
 		return err
@@ -284,10 +285,23 @@ func growRootFilesystemPartition(imagePath, applianceDir string, root rootFS, pa
 		return err
 	}
 
-	commands := []string{
-		fmt.Sprintf("part-resize %s %d -1", partDevice, partNum),
+	endSector, err := diskEndSector(imagePath)
+	if err != nil {
+		stdin.Close()
+		cmd.Wait()
+		return err
 	}
-	commands = append(commands, rootResizeCommands(root.FSType, root.Device)...)
+
+	commands := []string{
+		"run",
+		fmt.Sprintf("part-expand-gpt %s", partDevice),
+		fmt.Sprintf("part-resize %s %d %d", partDevice, partNum, endSector),
+	}
+	if len(rootResizeCommands(root.FSType, root.Device)) > 0 {
+		commands = append(commands, fmt.Sprintf("mount %s /", root.Device))
+		commands = append(commands, rootResizeCommands(root.FSType, root.Device)...)
+		commands = append(commands, "umount /")
+	}
 	commands = append(commands, "exit")
 	_, err = io.WriteString(stdin, strings.Join(commands, "\n")+"\n")
 	stdin.Close()
@@ -313,7 +327,7 @@ func growRootFilesystemLVM(imagePath, applianceDir string, root rootFS, lvm lvmI
 	}
 
 	fmt.Fprintf(progress, "  %s Growing root LVM %s\n", symbolDot, root.Device)
-	cmd := exec.Command("guestfish", "-a", imagePath, "-i")
+	cmd := exec.Command("guestfish", "-a", imagePath)
 	env, err := guestfsEnv(applianceDir)
 	if err != nil {
 		return err
@@ -330,12 +344,26 @@ func growRootFilesystemLVM(imagePath, applianceDir string, root rootFS, lvm lvmI
 		return err
 	}
 
+	endSector, err := diskEndSector(imagePath)
+	if err != nil {
+		stdin.Close()
+		cmd.Wait()
+		return err
+	}
+
 	commands := []string{
-		fmt.Sprintf("part-resize %s %d -1", partDevice, partNum),
+		"run",
+		fmt.Sprintf("part-expand-gpt %s", partDevice),
+		fmt.Sprintf("part-resize %s %d %d", partDevice, partNum, endSector),
+		"lvm-scan",
 		fmt.Sprintf("pvresize %s", primaryPV),
 		fmt.Sprintf("lvresize-free %s 100", root.Device),
 	}
-	commands = append(commands, rootResizeCommands(root.FSType, root.Device)...)
+	if len(rootResizeCommands(root.FSType, root.Device)) > 0 {
+		commands = append(commands, fmt.Sprintf("mount %s /", root.Device))
+		commands = append(commands, rootResizeCommands(root.FSType, root.Device)...)
+		commands = append(commands, "umount /")
+	}
 	commands = append(commands, "exit")
 
 	_, err = io.WriteString(stdin, strings.Join(commands, "\n")+"\n")
@@ -355,10 +383,52 @@ func rootResizeCommands(fsType, device string) []string {
 	case "ext2", "ext3", "ext4":
 		return []string{fmt.Sprintf("resize2fs %s", device)}
 	case "xfs":
-		return []string{fmt.Sprintf("mount %s /", device), "xfs-growfs /", "umount /"}
+		return []string{"xfs-growfs /"}
 	case "btrfs":
-		return []string{fmt.Sprintf("mount %s /", device), "btrfs-filesystem-resize max /", "umount /"}
+		return []string{"btrfs-filesystem-resize max /"}
 	default:
 		return []string{}
 	}
+}
+
+func diskEndSector(imagePath string) (int64, error) {
+	info, err := qemuImageInfo(imagePath)
+	if err != nil {
+		return 0, err
+	}
+	const sectorSize = int64(512)
+	if info.VirtualSize < sectorSize {
+		return 0, fmt.Errorf("invalid virtual size for %s", imagePath)
+	}
+	const gptFooterBytes = int64(16 * 1024)
+	available := info.VirtualSize - gptFooterBytes
+	if available < sectorSize {
+		return 0, fmt.Errorf("invalid GPT footer size for %s", imagePath)
+	}
+	// Reserve a little extra to satisfy GPT alignment constraints on some images.
+	const alignmentPaddingBytes = int64(16 * 1024)
+	if available > alignmentPaddingBytes {
+		available -= alignmentPaddingBytes
+	}
+	return (available / sectorSize) - 1, nil
+}
+
+type qemuImageInfoResult struct {
+	VirtualSize int64 `json:"virtual-size"`
+}
+
+func qemuImageInfo(imagePath string) (qemuImageInfoResult, error) {
+	cmd := exec.Command("qemu-img", "info", "--output=json", imagePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return qemuImageInfoResult{}, fmt.Errorf("qemu-img info failed: %w", err)
+	}
+	var info qemuImageInfoResult
+	if err := json.Unmarshal(output, &info); err != nil {
+		return qemuImageInfoResult{}, fmt.Errorf("parsing qemu-img info: %w", err)
+	}
+	if info.VirtualSize == 0 {
+		return qemuImageInfoResult{}, fmt.Errorf("qemu-img reported empty virtual size")
+	}
+	return info, nil
 }
