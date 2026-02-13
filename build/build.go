@@ -314,6 +314,8 @@ func ApplyLayers(imagePath string, layers []project.Layer, progress io.Writer) e
 // apply layers. Returns the path to the final build image.
 // If the build image already exists (cached), it returns early.
 func Build(p *project.Project, progress io.Writer) (string, error) {
+	// Collect root size from volume declarations for build-time resize
+	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
 	projectHash := p.Hash()
 
 	// Check cache
@@ -365,6 +367,17 @@ func Build(p *project.Project, progress io.Writer) (string, error) {
 	if err != nil {
 		os.Remove(tmpPath)
 		return "", err
+	}
+
+	// Resize build image if root volume size is declared
+	if rootSize != "" {
+		fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, rootSize)
+		cmd := exec.Command("qemu-img", "resize", tmpPath, rootSize)
+		cmd.Stderr = progress
+		if err := cmd.Run(); err != nil {
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("resizing build image: %w", err)
+		}
 	}
 
 	// Apply layers

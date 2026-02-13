@@ -183,10 +183,6 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		return fmt.Errorf("loading project: %w", err)
 	}
 
-	if p.CloudInit == "" {
-		return fmt.Errorf("no cloud-init.yaml found in project directory (run 'tank init' to create one)")
-	}
-
 	if instanceName == "" {
 		instanceName = filepath.Base(p.Root)
 	}
