@@ -39,10 +39,11 @@ func Preflight() []PreflightError {
 	toolHints := map[string]string{
 		"virsh":          "Install libvirt-clients (deb) or libvirt (rpm)",
 		"virt-customize": "Install libguestfs-tools (deb) or guestfs-tools (rpm)",
+		"guestfish":      "Install libguestfs-tools (deb) or guestfs-tools (rpm)",
 		"qemu-img":       "Install qemu-utils (deb) or qemu-img (rpm)",
 		"virt-install":   "Install virtinst (deb) or virt-install (rpm)",
 	}
-	for _, tool := range []string{"virsh", "virt-customize", "qemu-img", "virt-install"} {
+	for _, tool := range []string{"virsh", "virt-customize", "guestfish", "qemu-img", "virt-install"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			errs = append(errs, PreflightError{
 				Message: fmt.Sprintf("%s not found in PATH", tool),

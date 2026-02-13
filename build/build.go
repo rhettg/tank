@@ -199,7 +199,8 @@ func BuildImageExists(projectHash string) bool {
 // This is the hash of the last build stage in the chain.
 func FinalBuildHash(p *project.Project) string {
 	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
-	stages := p.BuildChain(rootSize)
+	resolvedRootSize, _ := resolveRootSize(rootSize)
+	stages := p.BuildChain(resolvedRootSize)
 	return stages[len(stages)-1].Hash
 }
 
@@ -209,7 +210,11 @@ func FinalBuildHash(p *project.Project) string {
 // requires applying that layer on top of the previous cached stage.
 func Build(p *project.Project, progress io.Writer) (string, error) {
 	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
-	stages := p.BuildChain(rootSize)
+	resolvedRootSize, err := resolveRootSize(rootSize)
+	if err != nil {
+		return "", err
+	}
+	stages := p.BuildChain(resolvedRootSize)
 	finalHash := stages[len(stages)-1].Hash
 
 	// Check if final build is already cached
@@ -282,13 +287,24 @@ func Build(p *project.Project, progress io.Writer) (string, error) {
 			return "", err
 		}
 
-		if rootSize != "" {
-			fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, rootSize)
-			cmd := exec.Command("qemu-img", "resize", tmpPath, rootSize)
+		if resolvedRootSize != "" {
+			fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, resolvedRootSize)
+			cmd := exec.Command("qemu-img", "resize", tmpPath, resolvedRootSize)
 			cmd.Stderr = progress
 			if err := cmd.Run(); err != nil {
 				os.Remove(tmpPath)
 				return "", fmt.Errorf("resizing build image: %w", err)
+			}
+
+			applianceDir, err := EnsureGuestfsAppliance(progress)
+			if err != nil {
+				os.Remove(tmpPath)
+				return "", err
+			}
+
+			if err := growRootFilesystem(tmpPath, applianceDir, progress); err != nil {
+				os.Remove(tmpPath)
+				return "", err
 			}
 		}
 
@@ -375,9 +391,11 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 	fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
 
 	cmd := exec.Command("virt-customize", args...)
-	if applianceDir != "" {
-		cmd.Env = append(os.Environ(), "LIBGUESTFS_PATH="+applianceDir)
+	env, err := guestfsEnv(applianceDir)
+	if err != nil {
+		return err
 	}
+	cmd.Env = env
 	cmd.Stdout = progress
 	cmd.Stderr = progress
 

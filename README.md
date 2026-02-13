@@ -146,6 +146,17 @@ Tank will try to use a fixed appliance in this order:
 You can override the appliance path by setting `LIBGUESTFS_PATH` before running
 `tank`.
 
+### Build defaults
+
+Tank defaults to a larger build appliance memory size and root disk size to
+avoid surprises during heavy installs:
+
+* `TANK_BUILD_MEM_MB` sets the libguestfs appliance memory used by
+  `virt-customize` (defaults to 8192). This is applied via
+  `LIBGUESTFS_MEMSIZE` when not already set.
+* `TANK_BUILD_ROOT_SIZE` sets the fallback root disk size for builds (defaults
+  to 50G). Layer `volumes/root` declarations still take precedence.
+
 ### Groups
 
 Your user must be in the `libvirt` and `kvm` groups:
@@ -284,6 +295,15 @@ size: 200G
 When multiple layers declare root sizes, Tank uses the largest value. A
 machine-learning layer that needs 200G just says so — any project that
 includes it gets the right disk size.
+
+During builds, Tank also grows the root filesystem inside the resized image
+using libguestfs. This keeps `virt-customize` from running out of space when
+install scripts expect the larger disk. If the filesystem type is unsupported
+or can't be detected, the resize step is skipped and the build may still fail.
+
+By default, builds assume a 50G root disk even when no layer declares a root
+volume. Override this default with `TANK_BUILD_ROOT_SIZE` or add a
+`volumes/root` declaration in any layer.
 
 ### Network mounts
 

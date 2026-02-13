@@ -400,7 +400,7 @@ func main() {
 		},
 	}
 	startCmd.Flags().IntVar(&startCPUs, "cpus", 2, "number of CPUs")
-	startCmd.Flags().IntVar(&startMemory, "memory", 4096, "memory in MB")
+	startCmd.Flags().IntVar(&startMemory, "memory", 8192, "memory in MB")
 
 	stopCmd := &cobra.Command{
 		Use:   "stop [name]",
