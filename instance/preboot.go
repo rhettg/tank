@@ -6,10 +6,50 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/rhettg/tank/project"
 	"github.com/rhettg/tank/ui"
 )
+
+// ValidateCloudInit checks that cloud-init content is well-formed.
+// It ensures the #cloud-config header is present (prepending it if missing)
+// and that the body looks like valid YAML key-value pairs.
+func ValidateCloudInit(content string) (string, error) {
+	if strings.TrimSpace(content) == "" {
+		return "", fmt.Errorf("cloud-init content is empty")
+	}
+
+	body := content
+	hasHeader := false
+	if strings.HasPrefix(content, "#cloud-config") {
+		hasHeader = true
+		if idx := strings.Index(content, "\n"); idx >= 0 {
+			body = content[idx+1:]
+		} else {
+			body = ""
+		}
+	}
+
+	// Check that the body has at least one top-level key (word followed by colon)
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.Contains(trimmed, ":") {
+			return "", fmt.Errorf("cloud-init body does not look like valid YAML (line %q has no key: value)", trimmed)
+		}
+		// First non-comment, non-empty line has a colon — looks like a mapping
+		break
+	}
+
+	if !hasHeader {
+		content = "#cloud-config\n" + content
+	}
+
+	return content, nil
+}
 
 // RunPrebootHooks executes preboot hooks for all layers that have them.
 // The cloudInitPath is a writable file that hooks can edit in place.

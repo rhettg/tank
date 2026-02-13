@@ -10,6 +10,70 @@ import (
 	"github.com/rhettg/tank/project"
 )
 
+func TestValidateCloudInit(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "valid with header",
+			input: "#cloud-config\nusers:\n  - name: test\n",
+			want:  "#cloud-config\nusers:\n  - name: test\n",
+		},
+		{
+			name:  "missing header is prepended",
+			input: "users:\n  - name: test\n",
+			want:  "#cloud-config\nusers:\n  - name: test\n",
+		},
+		{
+			name:    "empty content",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "whitespace only",
+			input:   "  \n\n  ",
+			wantErr: true,
+		},
+		{
+			name:    "not yaml mapping",
+			input:   "#cloud-config\n- item1\n- item2\n",
+			wantErr: true,
+		},
+		{
+			name:  "header only with body",
+			input: "#cloud-config\nhostname: test\n",
+			want:  "#cloud-config\nhostname: test\n",
+		},
+		{
+			name:  "comments before keys",
+			input: "#cloud-config\n# a comment\nusers:\n  - name: test\n",
+			want:  "#cloud-config\n# a comment\nusers:\n  - name: test\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidateCloudInit(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunPrebootHooks(t *testing.T) {
 	// Create a temp project with a preboot hook
 	tmpDir := t.TempDir()

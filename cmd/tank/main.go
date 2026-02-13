@@ -199,6 +199,15 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		cloudInitContent = string(modifiedContent)
 	}
 
+	// Validate cloud-init content
+	if cloudInitContent != "" {
+		validated, err := instance.ValidateCloudInit(cloudInitContent)
+		if err != nil {
+			return fmt.Errorf("invalid cloud-init after preboot hooks: %w", err)
+		}
+		cloudInitContent = validated
+	}
+
 	// Process volumes
 	blocks, networks, rootSize, err := project.CollectVolumes(p.Layers)
 	if err != nil {
