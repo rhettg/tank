@@ -48,10 +48,11 @@ func RenderInstanceTable(rows []InstanceRow) string {
 
 // LayerRow represents a row in the layer table
 type LayerRow struct {
-	Name   string
-	Script bool
-	Files  bool
-	Hash   string
+	Name    string
+	Script  bool
+	Files   bool
+	Volumes bool
+	Hash    string
 }
 
 // RenderLayerTable renders a styled table of layers
@@ -78,9 +79,15 @@ func RenderLayerTable(base string, rows []LayerRow) string {
 			filesMark = SuccessStyle.Render("▪")
 		}
 
+		volumesMark := MutedStyle.Render("·")
+		if row.Volumes {
+			volumesMark = SuccessStyle.Render("▪")
+		}
+
 		out += "  " + Bold.Render(row.Name) +
 			"  " + scriptMark + " script" +
 			"  " + filesMark + " files" +
+			"  " + volumesMark + " volumes" +
 			"  " + FormatHash(row.Hash) + "\n"
 	}
 

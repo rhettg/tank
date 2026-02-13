@@ -404,10 +404,11 @@ func main() {
 			rows := make([]ui.LayerRow, len(p.Layers))
 			for i, layer := range p.Layers {
 				rows[i] = ui.LayerRow{
-					Name:   layer.Name,
-					Script: layer.HasScript,
-					Files:  layer.HasFiles,
-					Hash:   layer.ContentHash,
+					Name:    layer.Name,
+					Script:  layer.HasScript,
+					Files:   layer.HasFiles,
+					Volumes: len(layer.Volumes) > 0,
+					Hash:    layer.ContentHash,
 				}
 			}
 			fmt.Println(ui.RenderLayerTable(p.Base, rows))
@@ -823,6 +824,9 @@ func main() {
 					}
 					if layer.HasPreboot {
 						flags = append(flags, "preboot")
+					}
+					if len(layer.Volumes) > 0 {
+						flags = append(flags, "volumes")
 					}
 					flagStr := ""
 					if len(flags) > 0 {
