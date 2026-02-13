@@ -28,7 +28,7 @@ prepare() {
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
   export CGO_ENABLED=0
-  go build -trimpath -ldflags="-s -w" -o tank ./cmd/tank
+  go build -trimpath -ldflags="-s -w -X main.buildVersion=v${pkgver}" -o tank ./cmd/tank
 }
 
 package() {

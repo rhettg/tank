@@ -19,6 +19,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// buildVersion is set by release builds via -ldflags "-X main.buildVersion=vX.Y.Z".
+var buildVersion string
+
 // resolveInstanceName determines the instance name from args or project path.
 func resolveInstanceName(projectPath string, args []string) (string, error) {
 	if len(args) > 0 {
@@ -910,11 +913,24 @@ func getVersion() string {
 		}
 	}
 
-	if revision != "" {
-		version = revision[:min(7, len(revision))]
-		if dirty {
-			version += "-dirty"
+	if buildVersion != "" {
+		version = buildVersion
+		if revision != "" {
+			version += "-" + revision[:min(7, len(revision))]
 		}
+		if dirty {
+			version += "+dirty"
+		}
+		return version
+	}
+
+	if revision == "" {
+		return version
+	}
+
+	version = revision[:min(7, len(revision))]
+	if dirty {
+		version += "-dirty"
 	}
 
 	return version
