@@ -117,7 +117,7 @@ func diagnoseIPTimeout(inst *instance.Instance) string {
 }
 
 // ensureRunning makes sure the named instance is built, created, and running.
-func ensureRunning(projectPath string, instanceName string, cpus int, memory int) error {
+func ensureRunning(projectPath string, instanceName string, cpus int, memory int, noCache bool) error {
 	if errs := build.Preflight(); build.PrintPreflightErrors(errs) {
 		return fmt.Errorf("preflight checks failed")
 	}
@@ -152,7 +152,7 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 	}
 
 	// Build image if needed
-	buildImagePath, err := build.Build(p, os.Stdout)
+	buildImagePath, err := build.Build(p, os.Stdout, build.BuildOptions{NoCache: noCache})
 	if err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
@@ -357,6 +357,7 @@ func main() {
 	}
 
 	var dryRun bool
+	var buildNoCache bool
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a VM image from project layers",
@@ -374,7 +375,7 @@ func main() {
 				return fmt.Errorf("preflight checks failed")
 			}
 
-			buildImagePath, err := build.Build(p, os.Stdout)
+			buildImagePath, err := build.Build(p, os.Stdout, build.BuildOptions{NoCache: buildNoCache})
 			if err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
@@ -384,9 +385,11 @@ func main() {
 		},
 	}
 	buildCmd.Flags().BoolVar(&dryRun, "dry-run", false, "show build plan without executing")
+	buildCmd.Flags().BoolVar(&buildNoCache, "no-cache", false, "rebuild image without using cached stages")
 
 	var startCPUs int
 	var startMemory int
+	var startNoCache bool
 	startCmd := &cobra.Command{
 		Use:   "start [name]",
 		Short: "Start the VM (builds image if needed)",
@@ -396,11 +399,12 @@ func main() {
 			if len(args) > 0 {
 				instanceName = args[0]
 			}
-			return ensureRunning(projectPath, instanceName, startCPUs, startMemory)
+			return ensureRunning(projectPath, instanceName, startCPUs, startMemory, startNoCache)
 		},
 	}
 	startCmd.Flags().IntVar(&startCPUs, "cpus", 2, "number of CPUs")
 	startCmd.Flags().IntVar(&startMemory, "memory", 8192, "memory in MB")
+	startCmd.Flags().BoolVar(&startNoCache, "no-cache", false, "rebuild image without using cached stages")
 
 	stopCmd := &cobra.Command{
 		Use:   "stop [name]",
@@ -480,9 +484,9 @@ func main() {
 			}
 
 			// Ensure instance is running (build/create/start as needed)
-			if err := ensureRunning(projectPath, instanceName, 2, 4096); err != nil {
-				return err
-			}
+				if err := ensureRunning(projectPath, instanceName, 2, 4096, false); err != nil {
+					return err
+				}
 
 			inst, err := instance.Load(instanceName)
 			if err != nil {

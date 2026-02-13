@@ -204,11 +204,16 @@ func FinalBuildHash(p *project.Project) string {
 	return stages[len(stages)-1].Hash
 }
 
+// BuildOptions controls caching behavior for builds.
+type BuildOptions struct {
+	NoCache bool
+}
+
 // Build runs the full build pipeline: download base image, create build stages,
 // apply layers incrementally. Returns the path to the final build image.
 // Each layer produces a cached qcow2 overlay so that adding a new layer only
 // requires applying that layer on top of the previous cached stage.
-func Build(p *project.Project, progress io.Writer) (string, error) {
+func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, error) {
 	_, _, rootSize, _ := project.CollectVolumes(p.Layers)
 	resolvedRootSize, err := resolveRootSize(rootSize)
 	if err != nil {
@@ -217,26 +222,34 @@ func Build(p *project.Project, progress io.Writer) (string, error) {
 	stages := p.BuildChain(resolvedRootSize)
 	finalHash := stages[len(stages)-1].Hash
 
+	if opts.NoCache {
+		fmt.Fprintf(progress, "%s Rebuilding without cache\n", symbolInfo)
+	}
+
 	// Check if final build is already cached
 	finalPath, err := BuildImagePath(finalHash)
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(finalPath); err == nil {
+	if !opts.NoCache {
+		if _, err := os.Stat(finalPath); err == nil {
 		fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
 		return finalPath, nil
+		}
 	}
 
 	// Find the deepest cached stage
 	resumeIdx := -1
-	for i := len(stages) - 1; i >= 0; i-- {
-		p, err := BuildImagePath(stages[i].Hash)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(p); err == nil {
-			resumeIdx = i
-			break
+	if !opts.NoCache {
+		for i := len(stages) - 1; i >= 0; i-- {
+			p, err := BuildImagePath(stages[i].Hash)
+			if err != nil {
+				continue
+			}
+			if _, err := os.Stat(p); err == nil {
+				resumeIdx = i
+				break
+			}
 		}
 	}
 

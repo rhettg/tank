@@ -20,13 +20,13 @@ Tank has two responsibilities:
 ## Command reference
 
 * **`tank init <base-url>`** — Initialize a new project with BASE, cloud-init, and a starter layer
-* **`tank start [name]`** — Build image (if needed) and start the VM
+* **`tank start [name] [--no-cache]`** — Build image (if needed) and start the VM (skip cached build stages)
 * **`tank stop [name]`** — Stop the VM
 * **`tank destroy [name]`** — Stop and remove the VM completely
 * **`tank ssh [name]`** — Connect to the VM over SSH
 * **`tank status [name]`** — Show project status: instance state, IP, build cache, image freshness, layers, and volumes
 * **`tank list`** — List all instances with status and IP
-* **`tank build`** — Build the VM image without starting
+* **`tank build [--no-cache]`** — Build the VM image without starting (skip cached build stages)
 * **`tank layers`** — List layers with content hashes
 * **`tank volume ls [--all]`** — List persistent volumes
 * **`tank volume rm <name>`** — Remove a persistent volume
