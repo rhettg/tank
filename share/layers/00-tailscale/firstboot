@@ -25,7 +25,7 @@ sleep 2
 
 # Authenticate with the ephemeral auth key
 # The key is already tagged and ephemeral, so we just need to bring it up
-tailscale up --auth-key="$TAILSCALE_AUTH_KEY"
+tailscale up --ssh --auth-key="$TAILSCALE_AUTH_KEY"
 
 echo "Tailscale connected!"
 tailscale status
