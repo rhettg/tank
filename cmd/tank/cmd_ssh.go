@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strings"
 	"time"
 
 	"github.com/rhettg/tank/instance"
@@ -79,8 +80,13 @@ func newSSHCmd(projectPath *string) *cobra.Command {
 				"-o", "StrictHostKeyChecking=no",
 				"-o", "UserKnownHostsFile=/dev/null",
 				"-o", "LogLevel=ERROR",
-				fmt.Sprintf("%s@%s", currentUser.Username, ip),
 			}
+
+			if shouldDisableTTY(extraSSHArgs) {
+				sshArgs = append(sshArgs, "-T")
+			}
+
+			sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", currentUser.Username, ip))
 
 			// Append any extra args passed after --
 			sshArgs = append(sshArgs, extraSSHArgs...)
@@ -124,4 +130,39 @@ func newSSHCmd(projectPath *string) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func shouldDisableTTY(extraSSHArgs []string) bool {
+	if isTerminal(os.Stdin) {
+		return false
+	}
+
+	for i := 0; i < len(extraSSHArgs); i++ {
+		arg := extraSSHArgs[i]
+		switch arg {
+		case "-t", "-tt", "-T":
+			return false
+		}
+
+		if arg == "-o" && i+1 < len(extraSSHArgs) {
+			nextArg := strings.TrimSpace(extraSSHArgs[i+1])
+			if strings.HasPrefix(nextArg, "RequestTTY=") {
+				return false
+			}
+		}
+
+		if strings.HasPrefix(arg, "-oRequestTTY=") {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isTerminal(file *os.File) bool {
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }
