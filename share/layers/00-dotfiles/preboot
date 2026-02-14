@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Dotfiles preboot hook - injects the user's dotfiles repo URL into cloud-init
+# so the firstboot script can clone and install it.
+#
+# Optional environment variables:
+#   DOTFILES_REPO        - Git URL of the dotfiles repository
+#                          (default: https://github.com/$USER/dotfiles.git)
+#   DOTFILES_INSTALL_CMD - Command to run after cloning (default: ./install.sh if it exists)
+#
+# Tank environment variables (set by tank):
+#   TANK_CLOUD_INIT     - Path to cloud-init file to edit
+#   TANK_INSTANCE_NAME  - Name of the instance being created
+
+DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/${USER}/dotfiles.git}"
+
+if [ -z "${TANK_CLOUD_INIT:-}" ]; then
+    echo "Error: TANK_CLOUD_INIT not set - is this running as a preboot hook?" >&2
+    exit 1
+fi
+
+install_cmd="${DOTFILES_INSTALL_CMD:-}"
+
+cat >>"$TANK_CLOUD_INIT" <<EOF
+
+write_files:
+  - path: /run/tank/dotfiles.env
+    permissions: "0644"
+    content: |
+      DOTFILES_REPO=${DOTFILES_REPO}
+      DOTFILES_INSTALL_CMD=${install_cmd}
+EOF
+
+echo "Injected dotfiles config into cloud-init (repo: ${DOTFILES_REPO})"

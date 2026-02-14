@@ -1,0 +1,20 @@
+#!/bin/sh
+# Ensure git is available for cloning dotfiles on first boot
+set -eu
+
+if command -v git >/dev/null 2>&1; then
+    exit 0
+fi
+
+if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y git
+elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y git
+elif command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm git
+elif command -v apk >/dev/null 2>&1; then
+    apk add git
+else
+    echo "Warning: could not install git - dotfiles clone may fail" >&2
+fi

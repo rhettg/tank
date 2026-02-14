@@ -1,0 +1,58 @@
+#!/bin/bash
+# Clone and install user dotfiles on first boot
+set -e
+
+SECRETS_FILE="/run/tank/dotfiles.env"
+
+if [ ! -f "$SECRETS_FILE" ]; then
+    echo "Error: $SECRETS_FILE not found - preboot hook may have failed"
+    exit 1
+fi
+
+source "$SECRETS_FILE"
+
+if [ -z "$DOTFILES_REPO" ]; then
+    echo "Error: DOTFILES_REPO not set in $SECRETS_FILE"
+    exit 1
+fi
+
+# Determine the default user (first non-root user with a home directory)
+DEFAULT_USER=""
+for u in /home/*/; do
+    u=$(basename "$u")
+    if id "$u" >/dev/null 2>&1; then
+        DEFAULT_USER="$u"
+        break
+    fi
+done
+
+if [ -z "$DEFAULT_USER" ]; then
+    echo "Error: no regular user found to install dotfiles for"
+    exit 1
+fi
+
+USER_HOME="/home/$DEFAULT_USER"
+DOTFILES_DIR="$USER_HOME/.dotfiles"
+
+echo "Cloning dotfiles from $DOTFILES_REPO into $DOTFILES_DIR..."
+su - "$DEFAULT_USER" -c "git clone '$DOTFILES_REPO' '$DOTFILES_DIR'"
+
+# Run the install command if configured, otherwise try common conventions
+if [ -n "${DOTFILES_INSTALL_CMD:-}" ]; then
+    echo "Running custom install command: $DOTFILES_INSTALL_CMD"
+    su - "$DEFAULT_USER" -c "cd '$DOTFILES_DIR' && $DOTFILES_INSTALL_CMD"
+elif [ -x "$DOTFILES_DIR/install.sh" ]; then
+    echo "Running install.sh..."
+    su - "$DEFAULT_USER" -c "cd '$DOTFILES_DIR' && ./install.sh"
+elif [ -x "$DOTFILES_DIR/setup.sh" ]; then
+    echo "Running setup.sh..."
+    su - "$DEFAULT_USER" -c "cd '$DOTFILES_DIR' && ./setup.sh"
+elif [ -f "$DOTFILES_DIR/Makefile" ]; then
+    echo "Running make..."
+    su - "$DEFAULT_USER" -c "cd '$DOTFILES_DIR' && make"
+else
+    echo "No install script found - dotfiles cloned but not installed"
+    echo "You can manually run your install from $DOTFILES_DIR"
+fi
+
+echo "Dotfiles setup complete!"
