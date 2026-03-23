@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/rhettg/tank/ui"
 )
 
 type PruneOptions struct {
@@ -448,43 +450,71 @@ func qcow2BackingFile(path string) (string, error) {
 }
 
 func renderPruneResult(w io.Writer, result *PruneResult, applied bool) {
-	mode := "Dry run"
+	ui.PrintHeader(w, "Prune")
+
+	modeLabel := ui.Highlight.Render("dry run")
 	if applied {
-		mode = "Prune applied"
+		modeLabel = ui.SuccessStyle.Render("applied")
 	}
-	fmt.Fprintf(w, "%s\n", mode)
-	fmt.Fprintf(w, "Roots: %d\n", len(result.Roots))
+	fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Mode:"), modeLabel)
+	fmt.Fprintf(w, "%s %d\n", ui.Bold.Render("Roots:"), len(result.Roots))
 	if len(result.Pinned) > 0 {
-		fmt.Fprintf(w, "Pinned builds: %d\n", len(result.Pinned))
+		fmt.Fprintf(w, "%s %d\n", ui.Bold.Render("Pinned builds:"), len(result.Pinned))
 	}
-	fmt.Fprintf(w, "Reachable builds: %d\n", len(result.Reachable))
-	fmt.Fprintf(w, "Reclaimable builds: %d (%s)\n", len(result.Reclaimable), formatBytes(result.ReclaimableBytes))
-	if len(result.Reclaimable) > 0 {
-		fmt.Fprintln(w, "")
-		for _, hash := range result.Reclaimable {
-			fmt.Fprintf(w, "  %s\n", hash)
-		}
+	fmt.Fprintf(w, "%s %d\n", ui.Bold.Render("Reachable builds:"), len(result.Reachable))
+
+	if len(result.Reclaimable) == 0 {
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Reclaimable builds:"), ui.SuccessStyle.Render("none"))
+	} else {
+		fmt.Fprintf(w, "%s %s\n",
+			ui.Bold.Render("Reclaimable builds:"),
+			ui.WarningStyle.Render(fmt.Sprintf("%d (%s)", len(result.Reclaimable), formatBytes(result.ReclaimableBytes))),
+		)
 	}
+
 	if applied {
-		fmt.Fprintf(w, "\nDeleted: %d (%s)\n", len(result.Deleted), formatBytes(result.DeletedBytes))
+		reclaimedLabel := ui.SuccessStyle.Render(fmt.Sprintf("%d (%s)", len(result.Deleted), formatBytes(result.DeletedBytes)))
+		if len(result.Deleted) == 0 {
+			reclaimedLabel = ui.MutedStyle.Render("0")
+		}
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Reclaimed:"), reclaimedLabel)
+	}
+
+	if len(result.Reclaimable) == 0 {
+		return
+	}
+
+	sectionTitle := "Reclaimable builds:"
+	if applied {
+		sectionTitle = "Removed builds:"
+	}
+	fmt.Fprintf(w, "\n%s\n", ui.Bold.Render(sectionTitle))
+	for _, hash := range result.Reclaimable {
+		fmt.Fprintf(w, "  %s %s\n", ui.SymbolDot, ui.MutedStyle.Render(hash))
 	}
 }
 
 func RenderPruneExplanation(w io.Writer, explanation *PruneExplanation) {
 	switch {
 	case explanation == nil || explanation.Hash == "":
-		fmt.Fprintln(w, "No build hash specified")
+		ui.PrintInfo(w, "No build hash specified")
 	case explanation.Kept:
-		fmt.Fprintf(w, "Build %s is kept\n", explanation.Hash)
+		ui.PrintHeader(w, "Prune Explain")
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Build:"), ui.MutedStyle.Render(explanation.Hash))
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("State:"), ui.SuccessStyle.Render("kept"))
 		if explanation.Reason != "" {
-			fmt.Fprintf(w, "Reason: %s\n", explanation.Reason)
+			fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Reason:"), explanation.Reason)
 		}
 		if len(explanation.Path) > 0 {
-			fmt.Fprintf(w, "Path: %s\n", strings.Join(explanation.Path, " -> "))
+			fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Path:"), ui.MutedStyle.Render(strings.Join(explanation.Path, " -> ")))
 		}
 	case explanation.Reclaimable:
-		fmt.Fprintf(w, "Build %s is reclaimable\n", explanation.Hash)
+		ui.PrintHeader(w, "Prune Explain")
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Build:"), ui.MutedStyle.Render(explanation.Hash))
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("State:"), ui.WarningStyle.Render("reclaimable"))
 	default:
-		fmt.Fprintf(w, "Build %s is not present in the cache\n", explanation.Hash)
+		ui.PrintHeader(w, "Prune Explain")
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("Build:"), ui.MutedStyle.Render(explanation.Hash))
+		fmt.Fprintf(w, "%s %s\n", ui.Bold.Render("State:"), ui.MutedStyle.Render("not present in cache"))
 	}
 }

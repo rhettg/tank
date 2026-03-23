@@ -56,7 +56,7 @@ func TestPruneDryRunKeepsLatestProjectBuild(t *testing.T) {
 	if got := strings.Join(result.Reclaimable, ","); got != "oldA,orphan" {
 		t.Fatalf("Reclaimable = %q, want oldA,orphan", got)
 	}
-	if !strings.Contains(output.String(), "Dry run") {
+	if !strings.Contains(output.String(), "Mode: dry run") {
 		t.Fatalf("output = %q, want dry-run summary", output.String())
 	}
 }
