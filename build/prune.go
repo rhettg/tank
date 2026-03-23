@@ -98,6 +98,21 @@ func Prune(progress io.Writer, opts PruneOptions) (*PruneResult, error) {
 	return result, nil
 }
 
+func AutoPrune(progress io.Writer) (*PruneResult, error) {
+	result, err := prune(PruneOptions{Apply: true})
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Deleted) > 0 {
+		fmt.Fprintf(progress, "%s Reclaimed %d cached build(s) (%s)\n",
+			symbolSuccess,
+			len(result.Deleted),
+			formatBytes(result.DeletedBytes),
+		)
+	}
+	return result, nil
+}
+
 func prune(opts PruneOptions) (*PruneResult, error) {
 	var result *PruneResult
 	err := withMetadataLock(func() error {

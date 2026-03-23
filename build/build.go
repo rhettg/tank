@@ -240,6 +240,9 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 				return "", fmt.Errorf("recording build metadata: %w", err)
 			}
 			fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
+			if _, err := AutoPrune(progress); err != nil {
+				fmt.Fprintf(progress, "%s Automatic prune failed: %v\n", symbolInfo, err)
+			}
 			return finalPath, nil
 		}
 	}
@@ -378,6 +381,9 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 
 	if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
 		return "", fmt.Errorf("recording build metadata: %w", err)
+	}
+	if _, err := AutoPrune(progress); err != nil {
+		fmt.Fprintf(progress, "%s Automatic prune failed: %v\n", symbolInfo, err)
 	}
 
 	return finalPath, nil

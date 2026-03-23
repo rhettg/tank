@@ -374,3 +374,45 @@ func TestPinAndUnpinBuild(t *testing.T) {
 		t.Fatalf("IsPinned() = true after unpin, want false")
 	}
 }
+
+func TestAutoPruneDeletesReclaimableBuilds(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	for _, hash := range []string{"baseA", "liveA", "deadA"} {
+		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
+			t.Fatalf("os.WriteFile() error: %v", err)
+		}
+	}
+
+	meta := &artifactMetadata{
+		Version: metadataVersion,
+		Artifacts: map[string]artifactRecord{
+			"baseA": {Hash: "baseA"},
+			"liveA": {Hash: "liveA", ParentHash: "baseA"},
+			"deadA": {Hash: "deadA", ParentHash: "baseA"},
+		},
+		Builds: []buildRecord{
+			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "liveA"},
+		},
+	}
+	if err := saveMetadata(meta); err != nil {
+		t.Fatalf("saveMetadata() error: %v", err)
+	}
+
+	var progress bytes.Buffer
+	result, err := AutoPrune(&progress)
+	if err != nil {
+		t.Fatalf("AutoPrune() error: %v", err)
+	}
+	if got := strings.Join(result.Deleted, ","); got != "deadA" {
+		t.Fatalf("Deleted = %q, want deadA", got)
+	}
+	if !strings.Contains(progress.String(), "Reclaimed 1 cached build(s)") {
+		t.Fatalf("progress = %q, want reclaim summary", progress.String())
+	}
+}
