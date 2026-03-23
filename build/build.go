@@ -17,6 +17,9 @@ import (
 
 // CacheDir returns the tank storage directory (/var/lib/tank).
 func CacheDir() (string, error) {
+	if dir := os.Getenv("TANK_CACHE_DIR"); dir != "" {
+		return dir, nil
+	}
 	return "/var/lib/tank", nil
 }
 
@@ -233,8 +236,11 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 	}
 	if !opts.NoCache {
 		if _, err := os.Stat(finalPath); err == nil {
-		fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
-		return finalPath, nil
+			if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
+				return "", fmt.Errorf("recording build metadata: %w", err)
+			}
+			fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
+			return finalPath, nil
 		}
 	}
 
@@ -368,6 +374,10 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 				return "", err
 			}
 		}
+	}
+
+	if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
+		return "", fmt.Errorf("recording build metadata: %w", err)
 	}
 
 	return finalPath, nil

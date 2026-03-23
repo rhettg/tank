@@ -21,6 +21,7 @@ func main() {
 	rootCmd.AddCommand(newInitCmd(&projectPath))
 	rootCmd.AddCommand(newLayersCmd(&projectPath))
 	rootCmd.AddCommand(newBuildCmd(&projectPath))
+	rootCmd.AddCommand(newPruneCmd())
 	rootCmd.AddCommand(newStartCmd(&projectPath))
 	rootCmd.AddCommand(newStopCmd(&projectPath))
 	rootCmd.AddCommand(newDestroyCmd(&projectPath))

@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rhettg/tank/project"
@@ -19,6 +21,20 @@ func TestCacheDir(t *testing.T) {
 
 	if dir != "/var/lib/tank" {
 		t.Errorf("CacheDir() = %q, want /var/lib/tank", dir)
+	}
+}
+
+func TestCacheDirOverride(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	dir, err := CacheDir()
+	if err != nil {
+		t.Fatalf("CacheDir() error: %v", err)
+	}
+
+	if dir != tempDir {
+		t.Errorf("CacheDir() = %q, want %q", dir, tempDir)
 	}
 }
 
@@ -99,6 +115,8 @@ func TestPrintPlan(t *testing.T) {
 }
 
 func TestBaseImagePath(t *testing.T) {
+	t.Setenv("TANK_CACHE_DIR", "/var/lib/tank")
+
 	path, err := BaseImagePath("https://example.com/images/test.img")
 	if err != nil {
 		t.Fatalf("BaseImagePath() error: %v", err)
@@ -204,6 +222,8 @@ func TestFormatBytes(t *testing.T) {
 }
 
 func TestBuildImagePath(t *testing.T) {
+	t.Setenv("TANK_CACHE_DIR", "/var/lib/tank")
+
 	path, err := BuildImagePath("abc123")
 	if err != nil {
 		t.Fatalf("BuildImagePath() error: %v", err)
@@ -222,4 +242,96 @@ func TestBuildImageExists(t *testing.T) {
 	}
 }
 
+func TestRecordBuildArtifacts(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
 
+	p, err := project.Load("../testdata/example-project")
+	if err != nil {
+		t.Fatalf("project.Load() error: %v", err)
+	}
+
+	stages := p.BuildChain("40G")
+	finalHash := stages[len(stages)-1].Hash
+
+	if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
+		t.Fatalf("recordBuildArtifacts() error: %v", err)
+	}
+
+	meta, err := loadMetadata()
+	if err != nil {
+		t.Fatalf("loadMetadata() error: %v", err)
+	}
+
+	if len(meta.Artifacts) != len(stages) {
+		t.Fatalf("len(meta.Artifacts) = %d, want %d", len(meta.Artifacts), len(stages))
+	}
+
+	for i, stage := range stages {
+		record, ok := meta.Artifacts[stage.Hash]
+		if !ok {
+			t.Fatalf("missing artifact record for %s", stage.Hash)
+		}
+		if i == 0 {
+			if record.ParentHash != "" {
+				t.Fatalf("base stage parent = %q, want empty", record.ParentHash)
+			}
+			continue
+		}
+		if record.ParentHash != stages[i-1].Hash {
+			t.Fatalf("record.ParentHash = %q, want %q", record.ParentHash, stages[i-1].Hash)
+		}
+	}
+
+	if len(meta.Builds) != 1 {
+		t.Fatalf("len(meta.Builds) = %d, want 1", len(meta.Builds))
+	}
+	if meta.Builds[0].ProjectRoot != p.Root {
+		t.Fatalf("ProjectRoot = %q, want %q", meta.Builds[0].ProjectRoot, p.Root)
+	}
+	if meta.Builds[0].ProjectName != filepath.Base(p.Root) {
+		t.Fatalf("ProjectName = %q, want %q", meta.Builds[0].ProjectName, filepath.Base(p.Root))
+	}
+	if meta.Builds[0].FinalHash != finalHash {
+		t.Fatalf("FinalHash = %q, want %q", meta.Builds[0].FinalHash, finalHash)
+	}
+}
+
+func TestRecordBuildArtifactsConcurrent(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	p1, err := project.Load("../testdata/example-project")
+	if err != nil {
+		t.Fatalf("project.Load() error: %v", err)
+	}
+	p2 := *p1
+	p2.Root = filepath.Join(tempDir, "project-two")
+
+	stages1 := p1.BuildChain("40G")
+	stages2 := p2.BuildChain("40G")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := recordBuildArtifacts(p1, stages1, stages1[len(stages1)-1].Hash); err != nil {
+			t.Errorf("recordBuildArtifacts(p1) error: %v", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if err := recordBuildArtifacts(&p2, stages2, stages2[len(stages2)-1].Hash); err != nil {
+			t.Errorf("recordBuildArtifacts(p2) error: %v", err)
+		}
+	}()
+	wg.Wait()
+
+	meta, err := loadMetadata()
+	if err != nil {
+		t.Fatalf("loadMetadata() error: %v", err)
+	}
+	if len(meta.Builds) != 2 {
+		t.Fatalf("len(meta.Builds) = %d, want 2", len(meta.Builds))
+	}
+}
