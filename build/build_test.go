@@ -335,3 +335,42 @@ func TestRecordBuildArtifactsConcurrent(t *testing.T) {
 		t.Fatalf("len(meta.Builds) = %d, want 2", len(meta.Builds))
 	}
 }
+
+func TestPinAndUnpinBuild(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	if err := PinBuild("abc123"); err != nil {
+		t.Fatalf("PinBuild() error: %v", err)
+	}
+	if err := PinBuild("abc123"); err != nil {
+		t.Fatalf("PinBuild() duplicate error: %v", err)
+	}
+
+	pinned, err := IsPinned("abc123")
+	if err != nil {
+		t.Fatalf("IsPinned() error: %v", err)
+	}
+	if !pinned {
+		t.Fatalf("IsPinned() = false, want true")
+	}
+
+	meta, err := loadMetadata()
+	if err != nil {
+		t.Fatalf("loadMetadata() error: %v", err)
+	}
+	if got := len(meta.Pins); got != 1 {
+		t.Fatalf("len(meta.Pins) = %d, want 1", got)
+	}
+
+	if err := UnpinBuild("abc123"); err != nil {
+		t.Fatalf("UnpinBuild() error: %v", err)
+	}
+	pinned, err = IsPinned("abc123")
+	if err != nil {
+		t.Fatalf("IsPinned() after unpin error: %v", err)
+	}
+	if pinned {
+		t.Fatalf("IsPinned() = true after unpin, want false")
+	}
+}

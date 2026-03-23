@@ -147,6 +147,116 @@ func TestPruneKeepsInstanceBackedBuildChain(t *testing.T) {
 	}
 }
 
+func TestExplainPruneKeptByLatestBuild(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	for _, hash := range []string{"baseA", "newA"} {
+		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
+			t.Fatalf("os.WriteFile() error: %v", err)
+		}
+	}
+
+	meta := &artifactMetadata{
+		Version: metadataVersion,
+		Artifacts: map[string]artifactRecord{
+			"baseA": {Hash: "baseA"},
+			"newA":  {Hash: "newA", ParentHash: "baseA"},
+		},
+		Builds: []buildRecord{
+			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "newA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
+		},
+	}
+	if err := saveMetadata(meta); err != nil {
+		t.Fatalf("saveMetadata() error: %v", err)
+	}
+
+	explanation, err := ExplainPrune("baseA")
+	if err != nil {
+		t.Fatalf("ExplainPrune() error: %v", err)
+	}
+	if !explanation.Kept {
+		t.Fatalf("Kept = false, want true")
+	}
+	if explanation.Reason != "latest build for project a" {
+		t.Fatalf("Reason = %q", explanation.Reason)
+	}
+	if got := strings.Join(explanation.Path, ","); got != "newA,baseA" {
+		t.Fatalf("Path = %q, want newA,baseA", got)
+	}
+}
+
+func TestExplainPruneReclaimable(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(buildsDir, "deadA.qcow2"), []byte("deadA"), 0644); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	explanation, err := ExplainPrune("deadA")
+	if err != nil {
+		t.Fatalf("ExplainPrune() error: %v", err)
+	}
+	if !explanation.Reclaimable {
+		t.Fatalf("Reclaimable = false, want true")
+	}
+}
+
+func TestPinnedBuildIsKept(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	for _, hash := range []string{"baseA", "pinA"} {
+		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
+			t.Fatalf("os.WriteFile() error: %v", err)
+		}
+	}
+
+	meta := &artifactMetadata{
+		Version: metadataVersion,
+		Artifacts: map[string]artifactRecord{
+			"baseA": {Hash: "baseA"},
+			"pinA":  {Hash: "pinA", ParentHash: "baseA"},
+		},
+		Pins: []string{"pinA"},
+	}
+	if err := saveMetadata(meta); err != nil {
+		t.Fatalf("saveMetadata() error: %v", err)
+	}
+
+	result, err := AnalyzePrune()
+	if err != nil {
+		t.Fatalf("AnalyzePrune() error: %v", err)
+	}
+	if got := strings.Join(result.Pinned, ","); got != "pinA" {
+		t.Fatalf("Pinned = %q, want pinA", got)
+	}
+	if got := strings.Join(result.Reachable, ","); got != "baseA,pinA" {
+		t.Fatalf("Reachable = %q, want baseA,pinA", got)
+	}
+
+	explanation, err := ExplainPrune("pinA")
+	if err != nil {
+		t.Fatalf("ExplainPrune() error: %v", err)
+	}
+	if explanation.Reason != "pinned by user" {
+		t.Fatalf("Reason = %q, want pinned by user", explanation.Reason)
+	}
+}
+
 func runQemuImg(t *testing.T, args ...string) {
 	t.Helper()
 

@@ -18,6 +18,7 @@ type artifactMetadata struct {
 	Version   int                       `json:"version"`
 	Artifacts map[string]artifactRecord `json:"artifacts"`
 	Builds    []buildRecord             `json:"builds"`
+	Pins      []string                  `json:"pins,omitempty"`
 }
 
 type artifactRecord struct {
@@ -95,6 +96,9 @@ func loadMetadata() (*artifactMetadata, error) {
 	if meta.Artifacts == nil {
 		meta.Artifacts = make(map[string]artifactRecord)
 	}
+	if meta.Pins == nil {
+		meta.Pins = []string{}
+	}
 	if meta.Version == 0 {
 		meta.Version = metadataVersion
 	}
@@ -166,4 +170,59 @@ func recordBuildArtifacts(p *project.Project, stages []project.BuildStage, final
 
 		return saveMetadata(meta)
 	})
+}
+
+func PinBuild(hash string) error {
+	return withMetadataLock(func() error {
+		meta, err := loadMetadata()
+		if err != nil {
+			return err
+		}
+		for _, pinned := range meta.Pins {
+			if pinned == hash {
+				return nil
+			}
+		}
+		meta.Pins = append(meta.Pins, hash)
+		sort.Strings(meta.Pins)
+		return saveMetadata(meta)
+	})
+}
+
+func UnpinBuild(hash string) error {
+	return withMetadataLock(func() error {
+		meta, err := loadMetadata()
+		if err != nil {
+			return err
+		}
+		var pins []string
+		for _, pinned := range meta.Pins {
+			if pinned != hash {
+				pins = append(pins, pinned)
+			}
+		}
+		meta.Pins = pins
+		return saveMetadata(meta)
+	})
+}
+
+func IsPinned(hash string) (bool, error) {
+	var pinned bool
+	err := withMetadataLock(func() error {
+		meta, err := loadMetadata()
+		if err != nil {
+			return err
+		}
+		for _, candidate := range meta.Pins {
+			if candidate == hash {
+				pinned = true
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return pinned, nil
 }
