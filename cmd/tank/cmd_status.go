@@ -12,6 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func formatStatusBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
 func newStatusCmd(projectPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -30,6 +43,10 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 			projectHash := build.FinalBuildHash(p)
 			buildCached := build.BuildImageExists(projectHash)
 			baseCached := build.BaseImageCached(p.Base)
+			pruneResult, err := build.AnalyzePrune()
+			if err != nil {
+				return fmt.Errorf("analyzing prune state: %w", err)
+			}
 
 			instExists := instance.Exists(instanceName)
 			var inst *instance.Instance
@@ -88,6 +105,14 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 			fmt.Printf("%s %s\n", ui.Bold.Render("IP:"), ip)
 			fmt.Printf("%s %s %s\n", ui.Bold.Render("Build:"), ui.FormatHash(projectHash), cacheStatus)
 			fmt.Printf("%s %s\n", ui.Bold.Render("Instance image:"), instanceImageStatus)
+			if len(pruneResult.Reclaimable) == 0 {
+				fmt.Printf("%s %s\n", ui.Bold.Render("Cache GC:"), ui.SuccessStyle.Render("no reclaimable builds"))
+			} else {
+				fmt.Printf("%s %s\n",
+					ui.Bold.Render("Cache GC:"),
+					ui.WarningStyle.Render(fmt.Sprintf("%d reclaimable build(s), %s", len(pruneResult.Reclaimable), formatStatusBytes(pruneResult.ReclaimableBytes))),
+				)
+			}
 			fmt.Println()
 
 			fmt.Printf("%s\n", ui.Bold.Render("Layers:"))

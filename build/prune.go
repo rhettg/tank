@@ -24,7 +24,21 @@ type PruneResult struct {
 	DeletedBytes     int64
 }
 
+func AnalyzePrune() (*PruneResult, error) {
+	return prune(PruneOptions{})
+}
+
 func Prune(progress io.Writer, opts PruneOptions) (*PruneResult, error) {
+	result, err := prune(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	renderPruneResult(progress, result, opts.Apply)
+	return result, nil
+}
+
+func prune(opts PruneOptions) (*PruneResult, error) {
 	var result *PruneResult
 	err := withMetadataLock(func() error {
 		cacheDir, err := CacheDir()
@@ -122,8 +136,6 @@ func Prune(progress io.Writer, opts PruneOptions) (*PruneResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	renderPruneResult(progress, result, opts.Apply)
 	return result, nil
 }
 
