@@ -27,6 +27,9 @@ Tank has two responsibilities:
 * **`tank status [name]`** — Show project status: instance state, IP, build cache, image freshness, layers, and volumes
 * **`tank list`** — List all instances with status and IP
 * **`tank build [--no-cache]`** — Build the VM image without starting (skip cached build stages)
+* **`tank prune [--apply] [--explain <hash>]`** — Show or remove unreachable cached build artifacts
+* **`tank pin <hash>`** — Keep a cached build even if nothing currently uses it
+* **`tank unpin <hash>`** — Remove a build pin
 * **`tank layers`** — List layers with content hashes
 * **`tank volume ls [--all]`** — List persistent volumes
 * **`tank volume rm <name>`** — Remove a persistent volume
@@ -243,12 +246,37 @@ This allows:
 * fast instance creation
 * changes isolated per instance
 
+### Automatic cache cleanup
+
+Tank automatically prunes **unreachable, unpinned cached builds** after a
+successful `tank build` or `tank start`.
+
+Tank keeps cached build artifacts that are still reachable from:
+
+* the latest recorded build for a project
+* any instance disk still backed by that build chain
+* any build you explicitly pinned with `tank pin <hash>`
+
+Anything else in `builds/` is eligible for removal.
+
+You can inspect or manage this directly:
+
+* `tank status` shows whether reclaimable build cache exists
+* `tank prune` shows what would be reclaimed
+* `tank prune --apply` removes unreachable cached builds immediately
+* `tank prune --explain <hash>` explains why a build is kept or reclaimable
+* `tank pin <hash>` / `tank unpin <hash>` override automatic cleanup
+
+See [docs/GC.md](docs/GC.md) for the full garbage-collection model.
+
 ---
 
 ## Volumes: persistent storage that survives rebuilds
 
 Layers can declare **persistent volumes** that are created, formatted, and mounted
 automatically. Destroy a VM, rebuild it, start it again — your data is still there.
+
+`tank prune` and automatic build pruning do **not** delete persistent volumes.
 
 ### Layer volumes
 
