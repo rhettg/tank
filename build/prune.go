@@ -361,7 +361,10 @@ func markReachable(hash string, buildFiles map[string]string, artifacts map[stri
 	}
 	reachable[hash] = struct{}{}
 
-	if artifact, ok := artifacts[hash]; ok && artifact.ParentHash != "" {
+	if artifact, ok := artifacts[hash]; ok {
+		if artifact.ParentHash == "" {
+			return nil
+		}
 		return markReachable(artifact.ParentHash, buildFiles, artifacts, reachable)
 	}
 
@@ -401,7 +404,10 @@ func parentHashFor(hash string, buildFiles map[string]string, artifacts map[stri
 	if !ok {
 		return "", false, nil
 	}
-	if artifact, ok := artifacts[hash]; ok && artifact.ParentHash != "" {
+	if artifact, ok := artifacts[hash]; ok {
+		if artifact.ParentHash == "" {
+			return "", false, nil
+		}
 		return artifact.ParentHash, true, nil
 	}
 	backingPath, err := qcow2BackingFile(path)
