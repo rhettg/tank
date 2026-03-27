@@ -55,6 +55,7 @@ go test ./...
 - Unix philosophy: small, focused commands
 - No external config files - filesystem is the interface
 - Version is auto-embedded from git via `runtime/debug`
+- See `DESIGN.md` for CLI/UI design system conventions, command naming, and output patterns
 
 ## Tank Project Layout
 See README.md for project layout, prerequisites, and storage model.
