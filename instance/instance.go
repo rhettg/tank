@@ -300,14 +300,19 @@ func (inst *Instance) IPAddress() (string, error) {
 	return "", nil
 }
 
-// IsRunning checks if the VM is currently running.
-func (inst *Instance) IsRunning() bool {
+// State returns the libvirt domain state for the instance.
+func (inst *Instance) State() string {
 	cmd := exec.Command("virsh", "-c", "qemu:///system", "domstate", inst.Domain)
 	output, err := cmd.Output()
 	if err != nil {
-		return false
+		return ""
 	}
-	return strings.TrimSpace(string(output)) == "running"
+	return strings.TrimSpace(string(output))
+}
+
+// IsRunning checks if the VM is currently running.
+func (inst *Instance) IsRunning() bool {
+	return inst.State() == "running"
 }
 
 // Stop stops the VM (graceful shutdown).

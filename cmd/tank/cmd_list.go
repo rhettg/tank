@@ -62,8 +62,9 @@ func newListCmd() *cobra.Command {
 					continue
 				}
 
-				running := inst.IsRunning()
-				status := ui.FormatStatus(running)
+				state := inst.State()
+				running := state == "running"
+				status := ui.FormatStatus(state)
 
 				ip := "-"
 				jsonIP := ""
@@ -82,9 +83,12 @@ func newListCmd() *cobra.Command {
 				results = append(results, instanceResult{
 					Name:    name,
 					Running: running,
-					Status:  map[bool]string{true: "running", false: "stopped"}[running],
+					Status:  map[string]string{"running": "running", "paused": "paused"}[state],
 					IP:      jsonIP,
 				})
+				if results[len(results)-1].Status == "" {
+					results[len(results)-1].Status = "stopped"
+				}
 			}
 
 			if jsonOutput {

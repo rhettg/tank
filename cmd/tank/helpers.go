@@ -60,6 +60,8 @@ func diagnoseIPTimeout(inst *instance.Instance) string {
 
 	if inst.IsRunning() {
 		details = append(details, "- VM is running (virsh domstate reports running)")
+	} else if inst.State() == "paused" {
+		details = append(details, "- VM is paused (resume it before expecting boot/network activity)")
 	} else {
 		details = append(details, "- VM is not running (check boot logs via virsh console)")
 	}
@@ -134,17 +136,28 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 		if err != nil {
 			return fmt.Errorf("loading instance: %w", err)
 		}
-		if inst.IsRunning() {
+		state := inst.State()
+		if state == "running" {
 			ui.PrintInfo(os.Stdout, "Instance %s is already running", ui.Bold.Render(instanceName))
 			return nil
 		}
-		// Instance exists but not running - start it
-		ui.PrintInfo(os.Stdout, "Starting existing instance %s", ui.Bold.Render(instanceName))
-		cmd := exec.Command("virsh", "-c", "qemu:///system", "start", inst.Domain)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("starting VM: %w: %s", err, output)
+		// Instance exists but is paused - resume it instead of starting again.
+		action := "start"
+		verb := "Starting"
+		gerund := "starting"
+		success := "started"
+		if state == "paused" {
+			action = "resume"
+			verb = "Resuming"
+			gerund = "resuming"
+			success = "resumed"
 		}
-		ui.PrintSuccess(os.Stdout, "Instance %s started", ui.Bold.Render(instanceName))
+		ui.PrintInfo(os.Stdout, "%s existing instance %s", verb, ui.Bold.Render(instanceName))
+		cmd := exec.Command("virsh", "-c", "qemu:///system", action, inst.Domain)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%s VM: %w: %s", gerund, err, output)
+		}
+		ui.PrintSuccess(os.Stdout, "Instance %s %s", ui.Bold.Render(instanceName), success)
 		return nil
 	}
 

@@ -64,9 +64,9 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 			state := ui.MutedStyle.Render("not created")
 			ip := "-"
 			if instExists {
-				running := inst.IsRunning()
-				state = ui.FormatStatus(running)
-				if running {
+				instanceState := inst.State()
+				state = ui.FormatStatus(instanceState)
+				if instanceState == "running" {
 					if addr, err := inst.IPAddress(); err == nil && addr != "" {
 						ip = addr
 					}
@@ -179,9 +179,12 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 			running := false
 			stateLabel := "not_created"
 			if instExists {
-				running = inst.IsRunning()
-				if running {
+				instanceState := inst.State()
+				running = instanceState == "running"
+				if instanceState == "running" {
 					stateLabel = "running"
+				} else if instanceState == "paused" {
+					stateLabel = "paused"
 				} else {
 					stateLabel = "stopped"
 				}

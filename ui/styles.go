@@ -44,6 +44,10 @@ var (
 			Foreground(Success).
 			Bold(true)
 
+	StatusPaused = lipgloss.NewStyle().
+			Foreground(Warning).
+			Bold(true)
+
 	StatusStopped = lipgloss.NewStyle().
 			Foreground(Muted)
 
@@ -55,12 +59,16 @@ var (
 	SymbolDot     = MutedStyle.Render("•")
 )
 
-// FormatStatus returns a styled status indicator
-func FormatStatus(running bool) string {
-	if running {
+// FormatStatus returns a styled status indicator.
+func FormatStatus(state string) string {
+	switch state {
+	case "running":
 		return StatusRunning.Render("● running")
+	case "paused":
+		return StatusPaused.Render("◐ paused")
+	default:
+		return StatusStopped.Render("○ stopped")
 	}
-	return StatusStopped.Render("○ stopped")
 }
 
 // FormatHash returns a styled short hash
