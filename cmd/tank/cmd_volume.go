@@ -11,8 +11,8 @@ import (
 )
 
 func newVolumeCmd() *cobra.Command {
-	makeVolumeListCmd := func(use string, aliases []string, volumeListAll *bool) *cobra.Command {
-		return &cobra.Command{
+	makeVolumeListCmd := func(use string, aliases []string, volumeListAll *bool, jsonOutput *bool) *cobra.Command {
+		cmd := &cobra.Command{
 			Use:     use,
 			Aliases: aliases,
 			Short:   "List volumes",
@@ -33,13 +33,25 @@ func newVolumeCmd() *cobra.Command {
 					return fmt.Errorf("listing volumes: %w", err)
 				}
 
+				type volumeResult struct {
+					Name         string `json:"name"`
+					InstanceName string `json:"instance_name"`
+					VolumeName   string `json:"volume_name"`
+					Path         string `json:"path"`
+					SizeBytes    int64  `json:"size_bytes"`
+					SizeHuman    string `json:"size_human"`
+					Orphaned     bool   `json:"orphaned"`
+				}
+
 				var rows []ui.VolumeRow
+				var results []volumeResult
 				for _, vol := range volumes {
 					// Format size
 					sizeStr := formatVolumeSize(vol.Size)
 					// Check if instance exists
+					orphaned := !instance.Exists(vol.InstanceName)
 					instanceStatus := vol.InstanceName
-					if !instance.Exists(vol.InstanceName) {
+					if orphaned {
 						instanceStatus = vol.InstanceName + " " + ui.MutedStyle.Render("(orphaned)")
 					}
 
@@ -49,21 +61,36 @@ func newVolumeCmd() *cobra.Command {
 						Instance: instanceStatus,
 						Path:     vol.Path,
 					})
+					results = append(results, volumeResult{
+						Name:         vol.Name,
+						InstanceName: vol.InstanceName,
+						VolumeName:   vol.VolumeName,
+						Path:         vol.Path,
+						SizeBytes:    vol.Size,
+						SizeHuman:    sizeStr,
+						Orphaned:     orphaned,
+					})
+				}
+
+				if *jsonOutput {
+					return writeJSON(cmd.OutOrStdout(), results)
 				}
 
 				if len(rows) == 0 {
 					if *volumeListAll {
-						fmt.Println(ui.MutedStyle.Render("No volumes found"))
+						fmt.Fprintln(cmd.OutOrStdout(), ui.MutedStyle.Render("No volumes found"))
 					} else {
-						fmt.Println(ui.MutedStyle.Render("No volumes found for this project"))
+						fmt.Fprintln(cmd.OutOrStdout(), ui.MutedStyle.Render("No volumes found for this project"))
 					}
 					return nil
 				}
 
-				fmt.Println(ui.RenderVolumeTable(rows))
+				fmt.Fprintln(cmd.OutOrStdout(), ui.RenderVolumeTable(rows))
 				return nil
 			},
 		}
+		cmd.Flags().BoolVar(jsonOutput, "json", false, "print machine-readable JSON")
+		return cmd
 	}
 
 	// Volume management commands
@@ -73,7 +100,8 @@ func newVolumeCmd() *cobra.Command {
 	}
 
 	var volumeListAll bool
-	volumeListCmd := makeVolumeListCmd("ls", []string{"list"}, &volumeListAll)
+	var volumeListJSON bool
+	volumeListCmd := makeVolumeListCmd("list", []string{"ls"}, &volumeListAll, &volumeListJSON)
 	volumeListCmd.Flags().BoolVar(&volumeListAll, "all", false, "list all volumes including orphaned")
 
 	var volumeRmForce bool

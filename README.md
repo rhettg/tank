@@ -24,15 +24,17 @@ Tank has two responsibilities:
 * **`tank stop [name]`** — Stop the VM
 * **`tank destroy [name]`** — Stop and remove the VM completely
 * **`tank ssh [name]`** — Connect to the VM over SSH
-* **`tank status [name]`** — Show project status: instance state, IP, build cache, image freshness, layers, and volumes
-* **`tank list`** — List all instances with status and IP
+* **`tank status [name] [--json]`** — Show project status: instance state, IP, build cache, image freshness, layers, and volumes
+* **`tank list [--json]`** — List all instances with status and IP (`tank ls` and `tank ps` are aliases)
 * **`tank build [--no-cache]`** — Build the VM image without starting (skip cached build stages)
 * **`tank prune [--apply] [--explain <hash>]`** — Show or remove unreachable cached build artifacts
 * **`tank pin <hash>`** — Keep a cached build even if nothing currently uses it
 * **`tank unpin <hash>`** — Remove a build pin
-* **`tank layers`** — List layers with content hashes
-* **`tank volume ls [--all]`** — List persistent volumes
+* **`tank layers [--json]`** — List layers with content hashes
+* **`tank volume list [--all] [--json]`** — List persistent volumes (`tank volume ls` is an alias)
 * **`tank volume rm <name>`** — Remove a persistent volume
+
+`--json` output is currently experimental. The available fields and schema may change between releases.
 
 Run multiple instances from the same image:
 
@@ -367,8 +369,8 @@ $ tank start
 ### Volume management
 
 ```bash
-tank volume ls                    # volumes for instances in this project
-tank volume ls --all              # all volumes, including orphaned
+tank volume list                  # volumes for instances in this project
+tank volume list --all            # all volumes, including orphaned
 tank volume rm myproject-pgdata   # delete a volume (with confirmation)
 ```
 

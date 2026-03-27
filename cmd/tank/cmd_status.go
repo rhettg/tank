@@ -26,10 +26,14 @@ func formatStatusBytes(b int64) string {
 }
 
 func newStatusCmd(projectPath *string) *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show project status",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+
 			p, err := project.Load(*projectPath)
 			if err != nil {
 				return fmt.Errorf("loading project: %w", err)
@@ -98,73 +102,212 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 				baseStatus = ui.SuccessStyle.Render("cached")
 			}
 
-			fmt.Printf("%s %s\n", ui.Bold.Render("Project:"), ui.MutedStyle.Render(p.Root))
-			fmt.Printf("%s %s %s\n", ui.Bold.Render("Base:"), ui.Highlight.Render(p.Base), baseStatus)
-			fmt.Printf("%s %s\n", ui.Bold.Render("Instance:"), ui.Highlight.Render(instanceName))
-			fmt.Printf("%s %s\n", ui.Bold.Render("State:"), state)
-			fmt.Printf("%s %s\n", ui.Bold.Render("IP:"), ip)
-			fmt.Printf("%s %s %s\n", ui.Bold.Render("Build:"), ui.FormatHash(projectHash), cacheStatus)
-			fmt.Printf("%s %s\n", ui.Bold.Render("Instance image:"), instanceImageStatus)
-			if len(pruneResult.Reclaimable) == 0 {
-				fmt.Printf("%s %s\n", ui.Bold.Render("Cache GC:"), ui.SuccessStyle.Render("no reclaimable builds"))
-			} else {
-				fmt.Printf("%s %s\n",
-					ui.Bold.Render("Cache GC:"),
-					ui.WarningStyle.Render(fmt.Sprintf("%d reclaimable build(s), %s", len(pruneResult.Reclaimable), formatStatusBytes(pruneResult.ReclaimableBytes))),
-				)
-			}
-			fmt.Println()
-
-			fmt.Printf("%s\n", ui.Bold.Render("Layers:"))
-			if len(p.Layers) == 0 {
-				fmt.Println(ui.MutedStyle.Render("No layers"))
-			} else {
-				for _, layer := range p.Layers {
-					flags := []string{}
-					if layer.HasScript {
-						flags = append(flags, "install")
-					}
-					if layer.HasFiles {
-						flags = append(flags, "files")
-					}
-					if layer.HasFirstboot {
-						flags = append(flags, "firstboot")
-					}
-					if layer.HasPreboot {
-						flags = append(flags, "preboot")
-					}
-					if len(layer.Volumes) > 0 {
-						flags = append(flags, "volumes")
-					}
-					flagStr := ""
-					if len(flags) > 0 {
-						flagStr = " (" + strings.Join(flags, ", ") + ")"
-					}
-					fmt.Printf("  %s %s%s\n", ui.SymbolDot, ui.Bold.Render(layer.Name), flagStr)
-					fmt.Printf("    %s\n", ui.MutedStyle.Render(layer.ContentHash[:8]))
-				}
-			}
-			fmt.Println()
-
 			blocks, networks, rootSize, err := project.CollectVolumes(p.Layers)
 			if err != nil {
 				return fmt.Errorf("collecting volumes: %w", err)
 			}
 
-			fmt.Printf("%s\n", ui.Bold.Render("Volumes:"))
+			type statusLayer struct {
+				Name  string   `json:"name"`
+				Hash  string   `json:"hash"`
+				Flags []string `json:"flags,omitempty"`
+			}
+			type statusVolume struct {
+				Name    string `json:"name"`
+				Kind    string `json:"kind"`
+				Size    string `json:"size,omitempty"`
+				Mount   string `json:"mount,omitempty"`
+				Format  string `json:"format,omitempty"`
+				Owner   string `json:"owner,omitempty"`
+				Source  string `json:"source,omitempty"`
+				Type    string `json:"type,omitempty"`
+				Options string `json:"options,omitempty"`
+				Layer   string `json:"layer,omitempty"`
+			}
+
+			layerResults := make([]statusLayer, 0, len(p.Layers))
+			for _, layer := range p.Layers {
+				flags := []string{}
+				if layer.HasScript {
+					flags = append(flags, "install")
+				}
+				if layer.HasFiles {
+					flags = append(flags, "files")
+				}
+				if layer.HasFirstboot {
+					flags = append(flags, "firstboot")
+				}
+				if layer.HasPreboot {
+					flags = append(flags, "preboot")
+				}
+				if len(layer.Volumes) > 0 {
+					flags = append(flags, "volumes")
+				}
+				layerResults = append(layerResults, statusLayer{
+					Name:  layer.Name,
+					Hash:  layer.ContentHash,
+					Flags: flags,
+				})
+			}
+
+			blockResults := make([]statusVolume, 0, len(blocks))
+			for _, vol := range blocks {
+				blockResults = append(blockResults, statusVolume{
+					Name:   vol.Name,
+					Kind:   "block",
+					Size:   vol.Size,
+					Mount:  vol.Mount,
+					Format: vol.Format,
+					Owner:  vol.Owner,
+					Layer:  vol.Layer,
+				})
+			}
+
+			networkResults := make([]statusVolume, 0, len(networks))
+			for _, vol := range networks {
+				networkResults = append(networkResults, statusVolume{
+					Name:    vol.Name,
+					Kind:    "network",
+					Mount:   vol.Mount,
+					Source:  vol.Source,
+					Type:    vol.Type,
+					Options: vol.Options,
+					Layer:   vol.Layer,
+				})
+			}
+
+			running := false
+			stateLabel := "not_created"
+			if instExists {
+				running = inst.IsRunning()
+				if running {
+					stateLabel = "running"
+				} else {
+					stateLabel = "stopped"
+				}
+			}
+
+			instanceImageState := "none"
+			instanceImageBuildHash := ""
+			if instExists {
+				backingPath, err := backingFilePath(inst.DiskPath)
+				if err != nil {
+					instanceImageState = "unknown"
+				} else {
+					backingBase := strings.TrimSuffix(filepath.Base(backingPath), ".qcow2")
+					instanceImageBuildHash = backingBase
+					if backingBase == projectHash {
+						instanceImageState = "fresh"
+					} else {
+						instanceImageState = "stale"
+					}
+				}
+			}
+
+			if jsonOutput {
+				result := struct {
+					Project string `json:"project"`
+					Base    struct {
+						Value  string `json:"value"`
+						Cached bool   `json:"cached"`
+					} `json:"base"`
+					Instance struct {
+						Name    string `json:"name"`
+						Exists  bool   `json:"exists"`
+						Running bool   `json:"running"`
+						State   string `json:"state"`
+						IP      string `json:"ip,omitempty"`
+					} `json:"instance"`
+					Build struct {
+						Hash   string `json:"hash"`
+						Cached bool   `json:"cached"`
+					} `json:"build"`
+					InstanceImage struct {
+						State     string `json:"state"`
+						BuildHash string `json:"build_hash,omitempty"`
+					} `json:"instance_image"`
+					CacheGC struct {
+						ReclaimableCount int    `json:"reclaimable_count"`
+						ReclaimableBytes int64  `json:"reclaimable_bytes"`
+						ReclaimableHuman string `json:"reclaimable_human"`
+					} `json:"cache_gc"`
+					Layers  []statusLayer `json:"layers"`
+					Volumes struct {
+						RootSize string         `json:"root_size,omitempty"`
+						Block    []statusVolume `json:"block"`
+						Network  []statusVolume `json:"network"`
+					} `json:"volumes"`
+				}{Project: p.Root, Layers: layerResults}
+
+				result.Base.Value = p.Base
+				result.Base.Cached = baseCached
+				result.Instance.Name = instanceName
+				result.Instance.Exists = instExists
+				result.Instance.Running = running
+				result.Instance.State = stateLabel
+				if ip != "-" {
+					result.Instance.IP = ip
+				}
+				result.Build.Hash = projectHash
+				result.Build.Cached = buildCached
+				result.InstanceImage.State = instanceImageState
+				result.InstanceImage.BuildHash = instanceImageBuildHash
+				result.CacheGC.ReclaimableCount = len(pruneResult.Reclaimable)
+				result.CacheGC.ReclaimableBytes = pruneResult.ReclaimableBytes
+				result.CacheGC.ReclaimableHuman = formatStatusBytes(pruneResult.ReclaimableBytes)
+				result.Volumes.RootSize = rootSize
+				result.Volumes.Block = blockResults
+				result.Volumes.Network = networkResults
+
+				return writeJSON(out, result)
+			}
+
+			ui.PrintKeyValue(out, "Project", ui.MutedStyle.Render(p.Root))
+			fmt.Fprintf(out, "%s %s %s\n", ui.Bold.Render("Base:"), ui.Highlight.Render(p.Base), baseStatus)
+			ui.PrintKeyValue(out, "Instance", ui.Highlight.Render(instanceName))
+			ui.PrintKeyValue(out, "State", state)
+			ui.PrintKeyValue(out, "IP", ip)
+			fmt.Fprintf(out, "%s %s %s\n", ui.Bold.Render("Build:"), ui.FormatHash(projectHash), cacheStatus)
+			ui.PrintKeyValue(out, "Instance image", instanceImageStatus)
+			if len(pruneResult.Reclaimable) == 0 {
+				ui.PrintKeyValue(out, "Cache GC", ui.SuccessStyle.Render("no reclaimable builds"))
+			} else {
+				fmt.Fprintf(out, "%s %s\n",
+					ui.Bold.Render("Cache GC:"),
+					ui.WarningStyle.Render(fmt.Sprintf("%d reclaimable build(s), %s", len(pruneResult.Reclaimable), formatStatusBytes(pruneResult.ReclaimableBytes))),
+				)
+			}
+			fmt.Fprintln(out)
+
+			ui.PrintSection(out, "Layers:")
+			if len(layerResults) == 0 {
+				fmt.Fprintln(out, ui.MutedStyle.Render("No layers"))
+			} else {
+				for _, layer := range layerResults {
+					flagStr := ""
+					if len(layer.Flags) > 0 {
+						flagStr = " (" + strings.Join(layer.Flags, ", ") + ")"
+					}
+					fmt.Fprintf(out, "  %s %s%s\n", ui.SymbolDot, ui.Bold.Render(layer.Name), flagStr)
+					fmt.Fprintf(out, "    %s\n", ui.MutedStyle.Render(layer.Hash[:8]))
+				}
+			}
+			fmt.Fprintln(out)
+
+			ui.PrintSection(out, "Volumes:")
 			if len(blocks) == 0 && len(networks) == 0 && rootSize == "" {
-				fmt.Println(ui.MutedStyle.Render("No volumes"))
+				fmt.Fprintln(out, ui.MutedStyle.Render("No volumes"))
 				return nil
 			}
 			if rootSize != "" {
-				fmt.Printf("  %s root %s\n", ui.SymbolDot, rootSize)
+				fmt.Fprintf(out, "  %s root %s\n", ui.SymbolDot, rootSize)
 			}
 			for _, vol := range blocks {
 				owner := ""
 				if vol.Owner != "" {
 					owner = fmt.Sprintf(" owner:%s", vol.Owner)
 				}
-				fmt.Printf("  %s %s block %s → %s (%s%s)\n",
+				fmt.Fprintf(out, "  %s %s block %s → %s (%s%s)\n",
 					ui.SymbolDot,
 					ui.Bold.Render(vol.Name),
 					vol.Size,
@@ -178,7 +321,7 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 				if vol.Options != "" {
 					opts = " " + vol.Options
 				}
-				fmt.Printf("  %s %s %s %s → %s%s\n",
+				fmt.Fprintf(out, "  %s %s %s %s → %s%s\n",
 					ui.SymbolDot,
 					ui.Bold.Render(vol.Name),
 					vol.Type,
@@ -190,4 +333,6 @@ func newStatusCmd(projectPath *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return cmd
 }

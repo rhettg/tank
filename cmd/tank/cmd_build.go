@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/rhettg/tank/build"
 	"github.com/rhettg/tank/project"
+	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,24 +17,26 @@ func newBuildCmd(projectPath *string) *cobra.Command {
 		Use:   "build",
 		Short: "Build a VM image from project layers",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+
 			p, err := project.Load(*projectPath)
 			if err != nil {
 				return fmt.Errorf("loading project: %w", err)
 			}
 
 			if dryRun {
-				return build.PrintPlan(os.Stdout, p)
+				return build.PrintPlan(out, p)
 			}
 
 			if errs := build.Preflight(); build.PrintPreflightErrors(errs) {
 				return fmt.Errorf("preflight checks failed")
 			}
 
-			buildImagePath, err := build.Build(p, os.Stdout, build.BuildOptions{NoCache: buildNoCache})
+			buildImagePath, err := build.Build(p, out, build.BuildOptions{NoCache: buildNoCache})
 			if err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
-			fmt.Printf("Build image ready: %s\n", buildImagePath)
+			ui.PrintSuccess(out, "Build image ready: %s", ui.MutedStyle.Render(buildImagePath))
 
 			return nil
 		},

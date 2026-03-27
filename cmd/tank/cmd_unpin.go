@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/rhettg/tank/build"
+	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +16,7 @@ func newUnpinCmd() *cobra.Command {
 			if err := build.UnpinBuild(hash); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Unpinned build %s\n", hash)
+			ui.PrintSuccess(cmd.OutOrStdout(), "Unpinned build %s", ui.MutedStyle.Render(hash))
 			return nil
 		},
 	}

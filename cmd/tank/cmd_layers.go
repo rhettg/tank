@@ -10,10 +10,13 @@ import (
 )
 
 func newLayersCmd(projectPath *string) *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "layers",
 		Short: "List project layers and their content hashes",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
 			p, err := project.Load(*projectPath)
 			if err != nil {
 				return fmt.Errorf("loading project: %w", err)
@@ -65,8 +68,45 @@ func newLayersCmd(projectPath *string) *cobra.Command {
 					Cache:   cacheStatus,
 				}
 			}
-			fmt.Println(ui.RenderLayerTable(p.Base, baseCached, rows))
+
+			if jsonOutput {
+				type layerResult struct {
+					Name       string `json:"name"`
+					Hash       string `json:"hash"`
+					HasScript  bool   `json:"has_script"`
+					HasFiles   bool   `json:"has_files"`
+					HasVolumes bool   `json:"has_volumes"`
+					Cache      string `json:"cache"`
+				}
+
+				result := struct {
+					Base       string        `json:"base"`
+					BaseCached bool          `json:"base_cached"`
+					Layers     []layerResult `json:"layers"`
+				}{
+					Base:       p.Base,
+					BaseCached: baseCached,
+					Layers:     make([]layerResult, len(rows)),
+				}
+
+				for i, row := range rows {
+					result.Layers[i] = layerResult{
+						Name:       row.Name,
+						Hash:       row.Hash,
+						HasScript:  row.Script,
+						HasFiles:   row.Files,
+						HasVolumes: row.Volumes,
+						Cache:      string(row.Cache),
+					}
+				}
+
+				return writeJSON(out, result)
+			}
+
+			fmt.Fprintln(out, ui.RenderLayerTable(p.Base, baseCached, rows))
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return cmd
 }

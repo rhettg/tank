@@ -12,11 +12,14 @@ import (
 )
 
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list", "ps"},
-		Short:   "List all VM instances",
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls", "ps"},
+		Short:   "List VM instances",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
 			cacheDir, err := build.CacheDir()
 			if err != nil {
 				return err
@@ -26,13 +29,24 @@ func newListCmd() *cobra.Command {
 			entries, err := os.ReadDir(instancesDir)
 			if err != nil {
 				if os.IsNotExist(err) {
-					fmt.Println(ui.MutedStyle.Render("No instances found"))
+					if jsonOutput {
+						return writeJSON(out, []any{})
+					}
+					fmt.Fprintln(out, ui.MutedStyle.Render("No instances found"))
 					return nil
 				}
 				return err
 			}
 
+			type instanceResult struct {
+				Name    string `json:"name"`
+				Running bool   `json:"running"`
+				Status  string `json:"status"`
+				IP      string `json:"ip,omitempty"`
+			}
+
 			var rows []ui.InstanceRow
+			var results []instanceResult
 			for _, entry := range entries {
 				name := entry.Name()
 				entryPath := filepath.Join(instancesDir, name)
@@ -48,12 +62,15 @@ func newListCmd() *cobra.Command {
 					continue
 				}
 
-				status := ui.FormatStatus(inst.IsRunning())
+				running := inst.IsRunning()
+				status := ui.FormatStatus(running)
 
 				ip := "-"
-				if inst.IsRunning() {
+				jsonIP := ""
+				if running {
 					if addr, err := inst.IPAddress(); err == nil && addr != "" {
 						ip = addr
+						jsonIP = addr
 					}
 				}
 
@@ -62,15 +79,27 @@ func newListCmd() *cobra.Command {
 					Status: status,
 					IP:     ip,
 				})
+				results = append(results, instanceResult{
+					Name:    name,
+					Running: running,
+					Status:  map[bool]string{true: "running", false: "stopped"}[running],
+					IP:      jsonIP,
+				})
+			}
+
+			if jsonOutput {
+				return writeJSON(out, results)
 			}
 
 			if len(rows) == 0 {
-				fmt.Println(ui.MutedStyle.Render("No instances found"))
+				fmt.Fprintln(out, ui.MutedStyle.Render("No instances found"))
 				return nil
 			}
 
-			fmt.Println(ui.RenderInstanceTable(rows))
+			fmt.Fprintln(out, ui.RenderInstanceTable(rows))
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
+	return cmd
 }

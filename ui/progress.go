@@ -306,6 +306,16 @@ func PrintHeader(w io.Writer, title string) {
 	fmt.Fprintln(w, strings.Repeat("─", len(title)))
 }
 
+// PrintSection prints a bold section title.
+func PrintSection(w io.Writer, title string) {
+	fmt.Fprintf(w, "%s\n", Bold.Render(title))
+}
+
+// PrintKeyValue prints a bold label followed by a value.
+func PrintKeyValue(w io.Writer, label string, value string) {
+	fmt.Fprintf(w, "%s %s\n", Bold.Render(label+":"), value)
+}
+
 // PrintSuccess prints a success message
 func PrintSuccess(w io.Writer, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)

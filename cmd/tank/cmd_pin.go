@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rhettg/tank/build"
+	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ func newPinCmd() *cobra.Command {
 			if err := build.PinBuild(hash); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Pinned build %s\n", hash)
+			ui.PrintSuccess(cmd.OutOrStdout(), "Pinned build %s", ui.MutedStyle.Render(hash))
 			return nil
 		},
 	}

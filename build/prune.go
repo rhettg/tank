@@ -107,7 +107,7 @@ func AutoPrune(progress io.Writer) (*PruneResult, error) {
 	}
 	if len(result.Deleted) > 0 {
 		fmt.Fprintf(progress, "%s Reclaimed %d cached build(s) (%s)\n",
-			symbolSuccess,
+			ui.SymbolSuccess,
 			len(result.Deleted),
 			formatBytes(result.DeletedBytes),
 		)

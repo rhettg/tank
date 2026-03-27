@@ -11,8 +11,8 @@ import (
 	"sort"
 
 	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/rhettg/tank/project"
+	"github.com/rhettg/tank/ui"
 )
 
 // CacheDir returns the tank storage directory (/var/lib/tank).
@@ -55,7 +55,7 @@ func DownloadBaseImage(url string, progress io.Writer) (string, error) {
 
 	// Check if already cached
 	if _, err := os.Stat(destPath); err == nil {
-		fmt.Fprintf(progress, "  %s Using cached image\n", symbolDot)
+		ui.PrintStep(progress, "Using cached image")
 		return destPath, nil
 	}
 
@@ -64,7 +64,7 @@ func DownloadBaseImage(url string, progress io.Writer) (string, error) {
 		return "", err
 	}
 
-	fmt.Fprintf(progress, "  %s %s\n", symbolDot, mutedStyle.Render(url))
+	ui.PrintStep(progress, "%s", ui.MutedStyle.Render(url))
 
 	// Download with progress
 	resp, err := http.Get(url)
@@ -97,25 +97,9 @@ func DownloadBaseImage(url string, progress io.Writer) (string, error) {
 		return "", err
 	}
 
-	fmt.Fprintf(progress, "  %s Saved to %s\n", symbolSuccess, mutedStyle.Render(destPath))
+	ui.PrintStep(progress, "Saved to %s", ui.MutedStyle.Render(destPath))
 	return destPath, nil
 }
-
-var (
-	stylePrimary   = lipgloss.Color("#7C3AED")
-	styleSecondary = lipgloss.Color("#06B6D4")
-	styleSuccess   = lipgloss.Color("#10B981")
-	styleMuted     = lipgloss.Color("#6B7280")
-
-	boldStyle    = lipgloss.NewStyle().Bold(true)
-	mutedStyle   = lipgloss.NewStyle().Foreground(styleMuted)
-	successStyle = lipgloss.NewStyle().Foreground(styleSuccess)
-	infoStyle    = lipgloss.NewStyle().Foreground(styleSecondary)
-
-	symbolInfo    = infoStyle.Render("→")
-	symbolSuccess = successStyle.Render("✓")
-	symbolDot     = mutedStyle.Render("•")
-)
 
 // copyWithProgress copies from src to dst, writing progress to w.
 func copyWithProgress(dst io.Writer, src io.Reader, total int64, w io.Writer) (int64, error) {
@@ -159,9 +143,9 @@ func printProgress(w io.Writer, prog progress.Model, written, total int64) {
 		pct := float64(written) / float64(total)
 		bar := prog.ViewAs(pct)
 		stats := fmt.Sprintf("%s / %s", formatBytes(written), formatBytes(total))
-		fmt.Fprintf(w, "\r  %s %s", bar, mutedStyle.Render(stats))
+		fmt.Fprintf(w, "\r  %s %s", bar, ui.MutedStyle.Render(stats))
 	} else {
-		fmt.Fprintf(w, "\r  %s", mutedStyle.Render(formatBytes(written)))
+		fmt.Fprintf(w, "\r  %s", ui.MutedStyle.Render(formatBytes(written)))
 	}
 }
 
@@ -226,7 +210,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 	finalHash := stages[len(stages)-1].Hash
 
 	if opts.NoCache {
-		fmt.Fprintf(progress, "%s Rebuilding without cache\n", symbolInfo)
+		ui.PrintInfo(progress, "Rebuilding without cache")
 	}
 
 	// Check if final build is already cached
@@ -239,9 +223,9 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 			if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
 				return "", fmt.Errorf("recording build metadata: %w", err)
 			}
-			fmt.Fprintf(progress, "%s Build cached %s\n", symbolSuccess, mutedStyle.Render(finalHash[:8]))
+			ui.PrintSuccess(progress, "Build cached %s", ui.MutedStyle.Render(finalHash[:8]))
 			if _, err := AutoPrune(progress); err != nil {
-				fmt.Fprintf(progress, "%s Automatic prune failed: %v\n", symbolInfo, err)
+				ui.PrintInfo(progress, "Automatic prune failed: %v", err)
 			}
 			return finalPath, nil
 		}
@@ -263,12 +247,12 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 	}
 
 	// Download base image
-	fmt.Fprintf(progress, "%s Downloading base image\n", symbolInfo)
+	ui.PrintInfo(progress, "Downloading base image")
 	baseImagePath, err := DownloadBaseImage(p.Base, progress)
 	if err != nil {
 		return "", fmt.Errorf("downloading base image: %w", err)
 	}
-	fmt.Println()
+	fmt.Fprintln(progress)
 
 	// Ensure builds directory exists
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
@@ -282,7 +266,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(progress, "%s Creating base stage %s\n", symbolInfo, mutedStyle.Render(baseStage.Hash[:8]))
+		ui.PrintInfo(progress, "Creating base stage %s", ui.MutedStyle.Render(baseStage.Hash[:8]))
 		tmpPath := basePath + ".tmp"
 
 		src, err := os.Open(baseImagePath)
@@ -310,7 +294,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		}
 
 		if resolvedRootSize != "" {
-			fmt.Fprintf(progress, "  %s Resizing build image to %s\n", symbolDot, resolvedRootSize)
+			ui.PrintStep(progress, "Resizing build image to %s", resolvedRootSize)
 			cmd := exec.Command("qemu-img", "resize", tmpPath, resolvedRootSize)
 			cmd.Stderr = progress
 			if err := cmd.Run(); err != nil {
@@ -336,7 +320,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		}
 		resumeIdx = 0
 	} else {
-		fmt.Fprintf(progress, "%s Cached up to stage %s\n", symbolSuccess, mutedStyle.Render(stages[resumeIdx].Hash[:8]))
+		ui.PrintSuccess(progress, "Cached up to stage %s", ui.MutedStyle.Render(stages[resumeIdx].Hash[:8]))
 	}
 
 	// Apply remaining layer stages as overlays
@@ -347,7 +331,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		}
 
 		fmt.Fprintln(progress)
-		fmt.Fprintf(progress, "%s Applying layers\n", symbolInfo)
+		ui.PrintInfo(progress, "Applying layers")
 
 		for i := resumeIdx + 1; i < len(stages); i++ {
 			stage := stages[i]
@@ -383,7 +367,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		return "", fmt.Errorf("recording build metadata: %w", err)
 	}
 	if _, err := AutoPrune(progress); err != nil {
-		fmt.Fprintf(progress, "%s Automatic prune failed: %v\n", symbolInfo, err)
+		ui.PrintInfo(progress, "Automatic prune failed: %v", err)
 	}
 
 	return finalPath, nil
@@ -417,7 +401,7 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 		return nil
 	}
 
-	fmt.Fprintf(progress, "  %s Applying %s\n", symbolDot, boldStyle.Render(layer.Name))
+	ui.PrintStep(progress, "Applying %s", ui.Bold.Render(layer.Name))
 
 	cmd := exec.Command("virt-customize", args...)
 	env, err := guestfsEnv(applianceDir)
@@ -436,26 +420,23 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 
 // PrintPlan prints the build plan for dry-run output.
 func PrintPlan(w io.Writer, p *project.Project) error {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(stylePrimary)
-	highlightStyle := lipgloss.NewStyle().Foreground(styleSecondary)
-	headerStyle := lipgloss.NewStyle().Bold(true)
-
-	fmt.Fprintf(w, "%s %s\n\n", titleStyle.Render("Build Plan"), mutedStyle.Render(p.Root))
+	ui.PrintHeader(w, "Build Plan")
+	fmt.Fprintf(w, "%s\n\n", ui.MutedStyle.Render(p.Root))
 
 	// Base image section
-	fmt.Fprintf(w, "%s\n", headerStyle.Render("Base Image"))
-	fmt.Fprintf(w, "  %s %s\n", symbolDot, mutedStyle.Render(p.Base))
+	ui.PrintSection(w, "Base Image")
+	fmt.Fprintf(w, "  %s %s\n", ui.SymbolDot, ui.MutedStyle.Render(p.Base))
 	if BaseImageCached(p.Base) {
-		fmt.Fprintf(w, "  %s cached\n", symbolSuccess)
+		fmt.Fprintf(w, "  %s cached\n", ui.SymbolSuccess)
 	} else {
-		fmt.Fprintf(w, "  %s would download\n", symbolInfo)
+		fmt.Fprintf(w, "  %s would download\n", ui.SymbolInfo)
 	}
 	fmt.Fprintln(w)
 
 	// Layers section
-	fmt.Fprintf(w, "%s\n", headerStyle.Render(fmt.Sprintf("Layers (%d)", len(p.Layers))))
+	ui.PrintSection(w, fmt.Sprintf("Layers (%d)", len(p.Layers)))
 	for _, layer := range p.Layers {
-		fmt.Fprintf(w, "  %s %s\n", boldStyle.Render(layer.Name), mutedStyle.Render(layer.ContentHash[:8]))
+		fmt.Fprintf(w, "  %s %s\n", ui.Bold.Render(layer.Name), ui.MutedStyle.Render(layer.ContentHash[:8]))
 
 		// List files that would be copied
 		if layer.HasFiles {
@@ -464,44 +445,44 @@ func PrintPlan(w io.Writer, p *project.Project) error {
 				return err
 			}
 			for _, f := range files {
-				fmt.Fprintf(w, "      %s copy %s\n", symbolDot, mutedStyle.Render(f))
+				fmt.Fprintf(w, "      %s copy %s\n", ui.SymbolDot, ui.MutedStyle.Render(f))
 			}
 		}
 
 		// Note if script would run
 		if layer.HasScript {
-			fmt.Fprintf(w, "      %s run %s\n", symbolDot, highlightStyle.Render("install"))
+			fmt.Fprintf(w, "      %s run %s\n", ui.SymbolDot, ui.Highlight.Render("install"))
 		}
 
 		// Note if firstboot script would run
 		if layer.HasFirstboot {
-			fmt.Fprintf(w, "      %s run %s (on first boot)\n", symbolDot, highlightStyle.Render("firstboot"))
+			fmt.Fprintf(w, "      %s run %s (on first boot)\n", ui.SymbolDot, ui.Highlight.Render("firstboot"))
 		}
 	}
 	fmt.Fprintln(w)
 
 	// Cloud-init section
 	if p.CloudInit != "" {
-		fmt.Fprintf(w, "%s\n", headerStyle.Render("Cloud-Init"))
-		fmt.Fprintf(w, "  %s inject cloud-init.yaml\n", symbolDot)
+		ui.PrintSection(w, "Cloud-Init")
+		fmt.Fprintf(w, "  %s inject cloud-init.yaml\n", ui.SymbolDot)
 		fmt.Fprintln(w)
 	}
 
 	// Output section
 	buildHash := FinalBuildHash(p)
-	fmt.Fprintf(w, "%s\n", headerStyle.Render("Output"))
-	fmt.Fprintf(w, "  %s hash %s\n", symbolDot, highlightStyle.Render(buildHash[:8]))
+	ui.PrintSection(w, "Output")
+	fmt.Fprintf(w, "  %s hash %s\n", ui.SymbolDot, ui.Highlight.Render(buildHash[:8]))
 
 	buildPath, err := BuildImagePath(buildHash)
 	if err != nil {
 		buildPath = "/var/lib/tank/builds/" + buildHash + ".qcow2"
 	}
-	fmt.Fprintf(w, "  %s path %s\n", symbolDot, mutedStyle.Render(buildPath))
+	fmt.Fprintf(w, "  %s path %s\n", ui.SymbolDot, ui.MutedStyle.Render(buildPath))
 
 	if BuildImageExists(buildHash) {
-		fmt.Fprintf(w, "  %s cached (skip build)\n", symbolSuccess)
+		fmt.Fprintf(w, "  %s cached (skip build)\n", ui.SymbolSuccess)
 	} else {
-		fmt.Fprintf(w, "  %s would build\n", symbolInfo)
+		fmt.Fprintf(w, "  %s would build\n", ui.SymbolInfo)
 	}
 
 	return nil

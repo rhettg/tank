@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/rhettg/tank/ui"
 	"github.com/spf13/cobra"
 )
@@ -12,7 +10,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("%s %s\n", ui.Bold.Render("tank"), ui.Highlight.Render(getVersion()))
+			ui.PrintKeyValue(cmd.OutOrStdout(), "tank", ui.Highlight.Render(getVersion()))
 		},
 	}
 }

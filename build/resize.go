@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/rhettg/tank/ui"
 )
 
 type mountEntry struct {
-	Mount string
+	Mount  string
 	Device string
 }
 
@@ -48,11 +50,11 @@ func growRootFilesystem(imagePath, applianceDir string, progress io.Writer) erro
 	}
 
 	if root.FSType == "" {
-		fmt.Fprintf(progress, "  %s Root filesystem type not detected; skipping resize\n", symbolDot)
+		ui.PrintStep(progress, "Root filesystem type not detected; skipping resize")
 		return nil
 	}
 	if root.FSType == "swap" || root.FSType == "unknown" {
-		fmt.Fprintf(progress, "  %s Root filesystem type %s not supported; skipping resize\n", symbolDot, root.FSType)
+		ui.PrintStep(progress, "Root filesystem type %s not supported; skipping resize", root.FSType)
 		return nil
 	}
 
@@ -267,7 +269,7 @@ func parsePartitionDevice(device string) (string, int, bool) {
 }
 
 func growRootFilesystemPartition(imagePath, applianceDir string, root rootFS, partDevice string, partNum int, progress io.Writer) error {
-	fmt.Fprintf(progress, "  %s Growing root partition %s\n", symbolDot, root.Device)
+	ui.PrintStep(progress, "Growing root partition %s", root.Device)
 	cmd := exec.Command("guestfish", "-a", imagePath)
 	env, err := guestfsEnv(applianceDir)
 	if err != nil {
@@ -326,7 +328,7 @@ func growRootFilesystemLVM(imagePath, applianceDir string, root rootFS, lvm lvmI
 		return fmt.Errorf("unsupported LVM PV device %s", primaryPV)
 	}
 
-	fmt.Fprintf(progress, "  %s Growing root LVM %s\n", symbolDot, root.Device)
+	ui.PrintStep(progress, "Growing root LVM %s", root.Device)
 	cmd := exec.Command("guestfish", "-a", imagePath)
 	env, err := guestfsEnv(applianceDir)
 	if err != nil {
