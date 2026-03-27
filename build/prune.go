@@ -439,10 +439,10 @@ func buildHashFromPath(path string, buildsDir string) (string, bool) {
 }
 
 func qcow2BackingFile(path string) (string, error) {
-	cmd := exec.Command("qemu-img", "info", "--output=json", path)
-	output, err := cmd.Output()
+	cmd := exec.Command("qemu-img", "info", "-U", "--output=json", path)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("qemu-img info: %w", err)
+		return "", fmt.Errorf("qemu-img info -U %s: %w: %s", path, err, strings.TrimSpace(string(output)))
 	}
 
 	var info struct {
