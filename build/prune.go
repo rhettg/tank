@@ -271,6 +271,9 @@ func analyzePruneState() (*pruneAnalysis, error) {
 func latestBuildRoots(builds []buildRecord) []pruneRoot {
 	latest := make(map[string]buildRecord)
 	for _, record := range builds {
+		if _, err := os.Stat(record.ProjectRoot); err != nil {
+			continue
+		}
 		current, ok := latest[record.ProjectRoot]
 		if !ok || record.CreatedAt.After(current.CreatedAt) {
 			latest[record.ProjectRoot] = record

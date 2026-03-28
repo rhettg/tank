@@ -20,7 +20,7 @@ Tank does **not** prune:
 
 A cached build is kept if it is reachable from any of these roots:
 
-* the latest recorded build for a project
+* the latest recorded build for an existing project root
 * a build currently backing an instance disk
 * a pinned build
 

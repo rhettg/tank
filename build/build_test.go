@@ -582,10 +582,14 @@ func TestPinAndUnpinBuild(t *testing.T) {
 func TestAutoPruneDeletesReclaimableBuilds(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TANK_CACHE_DIR", tempDir)
+	projectDir := filepath.Join(tempDir, "project-a")
 
 	buildsDir := filepath.Join(tempDir, "builds")
 	if err := os.MkdirAll(buildsDir, 0755); err != nil {
 		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(projectDir) error: %v", err)
 	}
 	for _, hash := range []string{"baseA", "liveA", "deadA"} {
 		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
@@ -601,7 +605,7 @@ func TestAutoPruneDeletesReclaimableBuilds(t *testing.T) {
 			"deadA": {Hash: "deadA", ParentHash: "baseA"},
 		},
 		Builds: []buildRecord{
-			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "liveA"},
+			{ProjectRoot: projectDir, ProjectName: "a", FinalHash: "liveA"},
 		},
 	}
 	if err := saveMetadata(meta); err != nil {

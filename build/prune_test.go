@@ -13,10 +13,14 @@ import (
 func TestPruneDryRunKeepsLatestProjectBuild(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TANK_CACHE_DIR", tempDir)
+	projectDir := filepath.Join(tempDir, "project-a")
 
 	buildsDir := filepath.Join(tempDir, "builds")
 	if err := os.MkdirAll(buildsDir, 0755); err != nil {
 		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(projectDir) error: %v", err)
 	}
 
 	for _, hash := range []string{"baseA", "oldA", "newA", "orphan"} {
@@ -33,8 +37,8 @@ func TestPruneDryRunKeepsLatestProjectBuild(t *testing.T) {
 			"newA":  {Hash: "newA", ParentHash: "baseA"},
 		},
 		Builds: []buildRecord{
-			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "oldA", CreatedAt: time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)},
-			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "newA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
+			{ProjectRoot: projectDir, ProjectName: "a", FinalHash: "oldA", CreatedAt: time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)},
+			{ProjectRoot: projectDir, ProjectName: "a", FinalHash: "newA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
 		},
 	}
 	if err := saveMetadata(meta); err != nil {
@@ -64,10 +68,14 @@ func TestPruneDryRunKeepsLatestProjectBuild(t *testing.T) {
 func TestPruneApplyDeletesUnreachableBuilds(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TANK_CACHE_DIR", tempDir)
+	projectDir := filepath.Join(tempDir, "project-a")
 
 	buildsDir := filepath.Join(tempDir, "builds")
 	if err := os.MkdirAll(buildsDir, 0755); err != nil {
 		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(projectDir) error: %v", err)
 	}
 
 	for _, hash := range []string{"baseA", "liveA", "deadA"} {
@@ -84,7 +92,7 @@ func TestPruneApplyDeletesUnreachableBuilds(t *testing.T) {
 			"deadA": {Hash: "deadA", ParentHash: "baseA"},
 		},
 		Builds: []buildRecord{
-			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "liveA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
+			{ProjectRoot: projectDir, ProjectName: "a", FinalHash: "liveA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
 		},
 	}
 	if err := saveMetadata(meta); err != nil {
@@ -150,10 +158,14 @@ func TestPruneKeepsInstanceBackedBuildChain(t *testing.T) {
 func TestExplainPruneKeptByLatestBuild(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TANK_CACHE_DIR", tempDir)
+	projectDir := filepath.Join(tempDir, "project-a")
 
 	buildsDir := filepath.Join(tempDir, "builds")
 	if err := os.MkdirAll(buildsDir, 0755); err != nil {
 		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(projectDir) error: %v", err)
 	}
 	for _, hash := range []string{"baseA", "newA"} {
 		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
@@ -168,7 +180,7 @@ func TestExplainPruneKeptByLatestBuild(t *testing.T) {
 			"newA":  {Hash: "newA", ParentHash: "baseA"},
 		},
 		Builds: []buildRecord{
-			{ProjectRoot: "/project/a", ProjectName: "a", FinalHash: "newA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
+			{ProjectRoot: projectDir, ProjectName: "a", FinalHash: "newA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
 		},
 	}
 	if err := saveMetadata(meta); err != nil {
@@ -187,6 +199,51 @@ func TestExplainPruneKeptByLatestBuild(t *testing.T) {
 	}
 	if got := strings.Join(explanation.Path, ","); got != "newA,baseA" {
 		t.Fatalf("Path = %q, want newA,baseA", got)
+	}
+}
+
+func TestPruneIgnoresMissingProjectRoots(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+
+	for _, hash := range []string{"baseA", "goneA"} {
+		if err := os.WriteFile(filepath.Join(buildsDir, hash+".qcow2"), []byte(hash), 0644); err != nil {
+			t.Fatalf("os.WriteFile() error: %v", err)
+		}
+	}
+
+	meta := &artifactMetadata{
+		Version: metadataVersion,
+		Artifacts: map[string]artifactRecord{
+			"baseA": {Hash: "baseA"},
+			"goneA": {Hash: "goneA", ParentHash: "baseA"},
+		},
+		Builds: []buildRecord{
+			{ProjectRoot: filepath.Join(tempDir, "missing-project"), ProjectName: "missing-project", FinalHash: "goneA", CreatedAt: time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)},
+		},
+	}
+	if err := saveMetadata(meta); err != nil {
+		t.Fatalf("saveMetadata() error: %v", err)
+	}
+
+	result, err := AnalyzePrune()
+	if err != nil {
+		t.Fatalf("AnalyzePrune() error: %v", err)
+	}
+
+	if len(result.Roots) != 0 {
+		t.Fatalf("Roots = %v, want none", result.Roots)
+	}
+	if len(result.Reachable) != 0 {
+		t.Fatalf("Reachable = %v, want none", result.Reachable)
+	}
+	if got := strings.Join(result.Reclaimable, ","); got != "baseA,goneA" {
+		t.Fatalf("Reclaimable = %q, want baseA,goneA", got)
 	}
 }
 

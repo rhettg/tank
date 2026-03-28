@@ -255,7 +255,7 @@ successful `tank build` or `tank start`.
 
 Tank keeps cached build artifacts that are still reachable from:
 
-* the latest recorded build for a project
+* the latest recorded build for an existing project
 * any instance disk still backed by that build chain
 * any build you explicitly pinned with `tank pin <hash>`
 
