@@ -32,7 +32,10 @@ func newBuildCmd(projectPath *string) *cobra.Command {
 				return fmt.Errorf("preflight checks failed")
 			}
 
-			buildImagePath, err := build.Build(p, out, build.BuildOptions{NoCache: buildNoCache})
+			buildImagePath, err := build.Build(p, out, build.BuildOptions{
+				NoCache: buildNoCache,
+				Verbose: verbose,
+			})
 			if err != nil {
 				return fmt.Errorf("build: %w", err)
 			}

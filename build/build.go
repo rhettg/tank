@@ -17,6 +17,8 @@ import (
 	"github.com/rhettg/tank/ui"
 )
 
+var runWithSpinner = ui.RunWithSpinner
+
 // CacheDir returns the tank storage directory (/var/lib/tank).
 func CacheDir() (string, error) {
 	if dir := os.Getenv("TANK_CACHE_DIR"); dir != "" {
@@ -196,6 +198,7 @@ func FinalBuildHash(p *project.Project) string {
 // BuildOptions controls caching behavior for builds.
 type BuildOptions struct {
 	NoCache bool
+	Verbose bool
 }
 
 // Build runs the full build pipeline: download base image, create build stages,
@@ -353,7 +356,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 			}
 
 			// Apply this single layer
-			if err := applyLayer(tmpPath, stage.Layer, applianceDir, progress); err != nil {
+			if err := applyLayer(tmpPath, stage.Layer, applianceDir, progress, opts.Verbose); err != nil {
 				os.Remove(tmpPath)
 				return "", err
 			}
@@ -376,7 +379,7 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 }
 
 // applyLayer applies a single layer to an image using virt-customize.
-func applyLayer(imagePath string, layer *project.Layer, applianceDir string, progress io.Writer) error {
+func applyLayer(imagePath string, layer *project.Layer, applianceDir string, progress io.Writer, verbose bool) error {
 	args := []string{"-a", imagePath}
 
 	if layer.HasFiles {
@@ -407,18 +410,35 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 		return nil
 	}
 
-	ui.PrintStep(progress, "Applying %s", ui.Bold.Render(layer.Name))
-
 	cmd := exec.Command("virt-customize", args...)
 	env, err := guestfsEnv(applianceDir)
 	if err != nil {
 		return err
 	}
 	cmd.Env = env
-	cmd.Stdout = progress
-	cmd.Stderr = progress
 
-	if err := cmd.Run(); err != nil {
+	if verbose {
+		ui.PrintStep(progress, "Applying %s", ui.Bold.Render(layer.Name))
+		cmd.Stdout = progress
+		cmd.Stderr = progress
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("applying layer %s: %w", layer.Name, err)
+		}
+		return nil
+	}
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	message := fmt.Sprintf("Applying %s", ui.Bold.Render(layer.Name))
+	if err := runWithSpinner(progress, message, cmd.Run); err != nil {
+		if output.Len() > 0 {
+			fmt.Fprint(progress, output.String())
+			if !bytes.HasSuffix(output.Bytes(), []byte{'\n'}) {
+				fmt.Fprintln(progress)
+			}
+		}
 		return fmt.Errorf("applying layer %s: %w", layer.Name, err)
 	}
 	return nil

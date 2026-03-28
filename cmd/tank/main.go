@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var verbose bool
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "tank",
@@ -16,6 +18,7 @@ func main() {
 
 	var projectPath string
 	rootCmd.PersistentFlags().StringVarP(&projectPath, "project", "p", ".", "path to project directory")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "show verbose command output")
 
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newInitCmd(&projectPath))

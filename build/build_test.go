@@ -2,6 +2,7 @@ package build
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -334,6 +335,114 @@ func TestBuildInstallScriptArgs(t *testing.T) {
 				t.Errorf("buildInstallScriptArgs() = %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+func TestApplyLayerQuietSuccessHidesVirtCustomizeOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	virtCustomize := filepath.Join(tempDir, "virt-customize")
+	if err := os.WriteFile(virtCustomize, []byte("#!/bin/sh\nprintf 'guestfs log\\n'\nprintf 'guestfs err\\n' >&2\n"), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layerDir := t.TempDir()
+	scriptPath := filepath.Join(layerDir, "install")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layer := &project.Layer{
+		Name:      "10-test",
+		Path:      layerDir,
+		HasScript: true,
+	}
+
+	origRunWithSpinner := runWithSpinner
+	runWithSpinner = func(_ io.Writer, _ string, fn func() error) error { return fn() }
+	defer func() { runWithSpinner = origRunWithSpinner }()
+
+	var progress bytes.Buffer
+	if err := applyLayer("/tmp/image.qcow2", layer, "", &progress, false); err != nil {
+		t.Fatalf("applyLayer() error: %v", err)
+	}
+
+	if strings.Contains(progress.String(), "guestfs log") || strings.Contains(progress.String(), "guestfs err") {
+		t.Fatalf("progress should not include virt-customize output on success, got %q", progress.String())
+	}
+}
+
+func TestApplyLayerQuietFailurePrintsVirtCustomizeOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	virtCustomize := filepath.Join(tempDir, "virt-customize")
+	script := "#!/bin/sh\nprintf 'guestfs log\\n'\nprintf 'guestfs err\\n' >&2\nexit 1\n"
+	if err := os.WriteFile(virtCustomize, []byte(script), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layerDir := t.TempDir()
+	scriptPath := filepath.Join(layerDir, "install")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layer := &project.Layer{
+		Name:      "10-test",
+		Path:      layerDir,
+		HasScript: true,
+	}
+
+	origRunWithSpinner := runWithSpinner
+	runWithSpinner = func(_ io.Writer, _ string, fn func() error) error { return fn() }
+	defer func() { runWithSpinner = origRunWithSpinner }()
+
+	var progress bytes.Buffer
+	err := applyLayer("/tmp/image.qcow2", layer, "", &progress, false)
+	if err == nil {
+		t.Fatal("applyLayer() error = nil, want failure")
+	}
+	if !strings.Contains(err.Error(), "applying layer 10-test") {
+		t.Fatalf("error = %q, want layer context", err.Error())
+	}
+
+	output := progress.String()
+	if !strings.Contains(output, "guestfs log") || !strings.Contains(output, "guestfs err") {
+		t.Fatalf("progress should include buffered virt-customize output on failure, got %q", output)
+	}
+}
+
+func TestApplyLayerVerboseStreamsVirtCustomizeOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	virtCustomize := filepath.Join(tempDir, "virt-customize")
+	if err := os.WriteFile(virtCustomize, []byte("#!/bin/sh\nprintf 'guestfs log\\n'\nprintf 'guestfs err\\n' >&2\n"), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layerDir := t.TempDir()
+	scriptPath := filepath.Join(layerDir, "install")
+	if err := os.WriteFile(scriptPath, []byte("echo ok\n"), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	layer := &project.Layer{
+		Name:      "10-test",
+		Path:      layerDir,
+		HasScript: true,
+	}
+
+	var progress bytes.Buffer
+	if err := applyLayer("/tmp/image.qcow2", layer, "", &progress, true); err != nil {
+		t.Fatalf("applyLayer() error: %v", err)
+	}
+
+	output := progress.String()
+	if !strings.Contains(output, "Applying") || !strings.Contains(output, "guestfs log") || !strings.Contains(output, "guestfs err") {
+		t.Fatalf("progress should include step and virt-customize output in verbose mode, got %q", output)
 	}
 }
 

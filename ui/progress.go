@@ -186,9 +186,9 @@ func (m SpinnerModel) View() string {
 
 type doneMsg struct{ err error }
 
-// RunWithSpinner runs a function with a spinner display
-func RunWithSpinner(message string, fn func() error) error {
-	p := tea.NewProgram(NewSpinner(message))
+// RunWithSpinner runs a function with a spinner display.
+func RunWithSpinner(w io.Writer, message string, fn func() error) error {
+	p := tea.NewProgram(NewSpinner(message), tea.WithOutput(w))
 
 	go func() {
 		err := fn()

@@ -162,7 +162,10 @@ func ensureRunning(projectPath string, instanceName string, cpus int, memory int
 	}
 
 	// Build image if needed
-	buildImagePath, err := build.Build(p, os.Stdout, build.BuildOptions{NoCache: noCache})
+	buildImagePath, err := build.Build(p, os.Stdout, build.BuildOptions{
+		NoCache: noCache,
+		Verbose: verbose,
+	})
 	if err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
