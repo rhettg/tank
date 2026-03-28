@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -239,6 +240,100 @@ func TestBuildImageExists(t *testing.T) {
 	exists := BuildImageExists("nonexistent-hash-12345")
 	if exists {
 		t.Error("BuildImageExists() = true for non-existent build, want false")
+	}
+}
+
+func TestHasScriptShebang(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "false without shebang",
+			content: "set -e\nprintf 'hello\\n'\n",
+			want:    false,
+		},
+		{
+			name:    "true with direct shebang",
+			content: "#!/bin/bash\nset -euo pipefail\n",
+			want:    true,
+		},
+		{
+			name:    "true with env shebang",
+			content: "#!/usr/bin/env bash\nset -euo pipefail\n",
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scriptPath := filepath.Join(t.TempDir(), "install")
+			if err := os.WriteFile(scriptPath, []byte(tt.content), 0755); err != nil {
+				t.Fatalf("WriteFile() error: %v", err)
+			}
+
+			got, err := hasScriptShebang(scriptPath)
+			if err != nil {
+				t.Fatalf("hasScriptShebang() error: %v", err)
+			}
+
+			if got != tt.want {
+				t.Errorf("hasScriptShebang() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildInstallScriptArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "executes shebang scripts directly",
+			content: "#!/usr/bin/env bash\nset -euo pipefail\n",
+			want: []string{
+				"--copy-in", "",
+				"--run-command", "chmod +x '/tmp/install' && exec '/tmp/install'",
+			},
+		},
+		{
+			name:    "falls back to sh without shebang",
+			content: "set -e\nprintf 'hello\\n'\n",
+			want: []string{
+				"--copy-in", "",
+				"--run-command", "'/bin/sh' '/tmp/install'",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			layerDir := t.TempDir()
+			scriptPath := filepath.Join(layerDir, "install")
+			if err := os.WriteFile(scriptPath, []byte(tt.content), 0755); err != nil {
+				t.Fatalf("WriteFile() error: %v", err)
+			}
+
+			layer := &project.Layer{
+				Name: "10-test",
+				Path: layerDir,
+			}
+
+			got, err := buildInstallScriptArgs(layer)
+			if err != nil {
+				t.Fatalf("buildInstallScriptArgs() error: %v", err)
+			}
+
+			want := append([]string(nil), tt.want...)
+			want[1] = scriptPath + ":/tmp"
+
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("buildInstallScriptArgs() = %#v, want %#v", got, want)
+			}
+		})
 	}
 }
 

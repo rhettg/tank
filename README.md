@@ -92,7 +92,7 @@ Layers are directories under `layers/`.
 Each layer may contain:
 
 * `preboot` — executed on the host before instance creation (can edit cloud-init)
-* `install` — executed during image build (executable)
+* `install` — executed during image build (executes directly if it has a shebang; otherwise defaults to `/bin/sh`)
 * `firstboot` — executed on first VM boot (executable)
 * `files/` — filesystem overlay copied verbatim
 * `volumes/` — persistent storage and network mount declarations

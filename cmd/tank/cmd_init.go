@@ -60,7 +60,7 @@ func newInitCmd(projectPath *string) *cobra.Command {
 			if err := os.MkdirAll(layerDir, 0755); err != nil {
 				return fmt.Errorf("creating layer directory: %w", err)
 			}
-			installScript := "#!/bin/bash\nset -e\n\n# Add your base provisioning here\n"
+			installScript := "#!/bin/sh\nset -e\n\n# Add your base provisioning here\n"
 			if err := os.WriteFile(filepath.Join(layerDir, "install"), []byte(installScript), 0755); err != nil {
 				return fmt.Errorf("writing install: %w", err)
 			}

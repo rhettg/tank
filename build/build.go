@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/rhettg/tank/project"
@@ -390,7 +392,11 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 	}
 
 	if layer.HasScript {
-		args = append(args, "--run", filepath.Join(layer.Path, "install"))
+		installArgs, err := buildInstallScriptArgs(layer)
+		if err != nil {
+			return fmt.Errorf("preparing install script for layer %s: %w", layer.Name, err)
+		}
+		args = append(args, installArgs...)
 	}
 
 	if layer.HasFirstboot {
@@ -416,6 +422,49 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 		return fmt.Errorf("applying layer %s: %w", layer.Name, err)
 	}
 	return nil
+}
+
+func buildInstallScriptArgs(layer *project.Layer) ([]string, error) {
+	scriptPath := filepath.Join(layer.Path, "install")
+	guestPath := "/tmp/install"
+
+	hasShebang, err := hasScriptShebang(scriptPath)
+	if err != nil {
+		return nil, err
+	}
+
+	runCommand := shellJoin("/bin/sh", guestPath)
+	if hasShebang {
+		runCommand = "chmod +x " + shellQuote(guestPath) + " && exec " + shellQuote(guestPath)
+	}
+
+	return []string{
+		"--copy-in", scriptPath + ":/tmp",
+		"--run-command", runCommand,
+	}, nil
+}
+
+func hasScriptShebang(scriptPath string) (bool, error) {
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return false, err
+	}
+
+	firstLine, _, _ := bytes.Cut(content, []byte{'\n'})
+	line := strings.TrimSpace(string(firstLine))
+	return strings.HasPrefix(line, "#!"), nil
+}
+
+func shellJoin(parts ...string) string {
+	quoted := make([]string, 0, len(parts))
+	for _, part := range parts {
+		quoted = append(quoted, shellQuote(part))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // PrintPlan prints the build plan for dry-run output.
