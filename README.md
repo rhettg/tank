@@ -31,7 +31,7 @@ Tank has two responsibilities:
 * **`tank pin <hash>`** — Keep a cached build even if nothing currently uses it
 * **`tank unpin <hash>`** — Remove a build pin
 * **`tank layers [--json]`** — List layers with content hashes
-* **`tank volume list [--all] [--json]`** — List persistent volumes (`tank volume ls` is an alias)
+* **`tank volume list [--instance <name> | --all] [--json]`** — List persistent volumes (`tank volume ls` is an alias)
 * **`tank volume rm <name>`** — Remove a persistent volume
 
 `--json` output is currently experimental. The available fields and schema may change between releases.
@@ -370,6 +370,7 @@ $ tank start
 
 ```bash
 tank volume list                  # volumes for instances in this project
+tank volume list --instance myproject-secondary
 tank volume list --all            # all volumes, including orphaned
 tank volume rm myproject-pgdata   # delete a volume (with confirmation)
 ```

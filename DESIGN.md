@@ -132,6 +132,7 @@ Empty states should be explicit, muted, and terminal-friendly:
 - `No layers`
 - `No volumes found`
 - `No volumes found for this project`
+- `No volumes found for instance myproject-secondary`
 
 Do not emit blank output for empty results.
 
@@ -353,6 +354,7 @@ Current guidance:
 Flags should express one of four roles:
 
 - Scope selection: `--project`, `--all`
+- Scope selection: `--project`, `--instance`, `--all`
 - Execution mode: `--dry-run`, `--apply`
 - Safety override: `--force`
 - Cache behavior: `--no-cache`
@@ -372,6 +374,7 @@ The following names should be standardized:
 - `--dry-run`: show intended actions without changing state
 - `--apply`: perform the destructive or mutating action after showing that dry-run is the default
 - `--all`: include resources outside the default scope
+- `--instance`: scope a resource listing or inspection to one named instance
 - `--force`: bypass a safety check that would otherwise stop the operation
 - `--explain <id>`: explain why a resource is in its current state
 

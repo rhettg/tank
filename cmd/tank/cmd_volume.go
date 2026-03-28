@@ -11,21 +11,30 @@ import (
 )
 
 func newVolumeCmd() *cobra.Command {
-	makeVolumeListCmd := func(use string, aliases []string, volumeListAll *bool, jsonOutput *bool) *cobra.Command {
+	makeVolumeListCmd := func(use string, aliases []string, volumeListAll *bool, volumeListInstance *string, jsonOutput *bool) *cobra.Command {
 		cmd := &cobra.Command{
 			Use:     use,
 			Aliases: aliases,
 			Short:   "List volumes",
-			Long:    "List persistent volumes. By default shows volumes for the current project's instances.",
+			Long:    "List persistent volumes. By default shows volumes for the current project's instances. Use --instance to scope to a single instance, or --all to include all volumes.",
+			Args:    cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				var filter string
-				if !*volumeListAll {
+				emptyMessage := "No volumes found"
+				switch {
+				case *volumeListAll && *volumeListInstance != "":
+					return fmt.Errorf("--all and --instance cannot be used together")
+				case *volumeListInstance != "":
+					filter = *volumeListInstance
+					emptyMessage = fmt.Sprintf("No volumes found for instance %s", *volumeListInstance)
+				case !*volumeListAll:
 					// Use current project's directory name as instance filter
 					absPath, err := filepath.Abs(".")
 					if err != nil {
 						return err
 					}
 					filter = filepath.Base(absPath)
+					emptyMessage = "No volumes found for this project"
 				}
 
 				volumes, err := instance.ListVolumes(filter)
@@ -77,11 +86,7 @@ func newVolumeCmd() *cobra.Command {
 				}
 
 				if len(rows) == 0 {
-					if *volumeListAll {
-						fmt.Fprintln(cmd.OutOrStdout(), ui.MutedStyle.Render("No volumes found"))
-					} else {
-						fmt.Fprintln(cmd.OutOrStdout(), ui.MutedStyle.Render("No volumes found for this project"))
-					}
+					fmt.Fprintln(cmd.OutOrStdout(), ui.MutedStyle.Render(emptyMessage))
 					return nil
 				}
 
@@ -100,9 +105,11 @@ func newVolumeCmd() *cobra.Command {
 	}
 
 	var volumeListAll bool
+	var volumeListInstance string
 	var volumeListJSON bool
-	volumeListCmd := makeVolumeListCmd("list", []string{"ls"}, &volumeListAll, &volumeListJSON)
+	volumeListCmd := makeVolumeListCmd("list", []string{"ls"}, &volumeListAll, &volumeListInstance, &volumeListJSON)
 	volumeListCmd.Flags().BoolVar(&volumeListAll, "all", false, "list all volumes including orphaned")
+	volumeListCmd.Flags().StringVar(&volumeListInstance, "instance", "", "list volumes for a single instance")
 
 	var volumeRmForce bool
 	volumeRmCmd := &cobra.Command{

@@ -167,24 +167,34 @@ No extra configuration. The layer knows what it needs.
 
 ## Volume management
 
-### `tank volume ls`
+### `tank volume list`
 
 By default, lists volumes for instances associated with the current project:
 
 ```
-$ tank volume ls
+$ tank volume list
 NAME                  SIZE   MOUNT                  INSTANCE     USED
 myproject-pgdata      20G    /var/lib/postgresql    myproject    4.2G
 myproject-models      100G   /models               myproject    67G
 ```
 
-### `tank volume ls --all`
+### `tank volume list --instance <name>`
+
+Lists volumes for a single instance when a project has multiple instances:
+
+```
+$ tank volume list --instance myproject-secondary
+NAME                            SIZE   MOUNT                  INSTANCE               USED
+myproject-secondary-pgdata      20G    /var/lib/postgresql    myproject-secondary    4.2G
+```
+
+### `tank volume list --all`
 
 Lists all volumes, including those whose instances have been destroyed
 (orphaned volumes):
 
 ```
-$ tank volume ls --all
+$ tank volume list --all
 NAME                  SIZE   MOUNT                  INSTANCE     USED
 myproject-pgdata      20G    /var/lib/postgresql    myproject    4.2G
 myproject-models      100G   /models               myproject    67G
