@@ -186,6 +186,65 @@ func BuildImageExists(projectHash string) bool {
 	return err == nil
 }
 
+func removeStaleBuildTemp(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing stale build temp %s: %w", path, err)
+	}
+	return nil
+}
+
+func deepestUsableCachedStage(stages []project.BuildStage, progress io.Writer) int {
+	resumeIdx := -1
+	for i, stage := range stages {
+		path, err := BuildImagePath(stage.Hash)
+		if err != nil {
+			return resumeIdx
+		}
+
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				discardCachedBuildStages(stages[i+1:], progress)
+				return resumeIdx
+			}
+			ui.PrintInfo(progress, "Ignoring cached stage %s: %v", ui.MutedStyle.Render(stage.Hash[:8]), err)
+			return resumeIdx
+		}
+
+		if err := validateBuildImage(path); err != nil {
+			ui.PrintInfo(progress, "Discarding invalid cached stage %s", ui.MutedStyle.Render(stage.Hash[:8]))
+			ui.PrintInfo(progress, "%v", err)
+			discardCachedBuildStages(stages[i:], progress)
+			return resumeIdx
+		}
+
+		resumeIdx = i
+	}
+	return resumeIdx
+}
+
+func discardCachedBuildStages(stages []project.BuildStage, progress io.Writer) {
+	for _, stage := range stages {
+		path, err := BuildImagePath(stage.Hash)
+		if err != nil {
+			continue
+		}
+		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			ui.PrintInfo(progress, "Could not remove cached stage %s: %v", ui.MutedStyle.Render(stage.Hash[:8]), removeErr)
+		}
+	}
+}
+
+func validateBuildImage(path string) error {
+	format, err := ImageFormat(path)
+	if err != nil {
+		return err
+	}
+	if format == "" {
+		return fmt.Errorf("qemu-img info %s: missing image format", path)
+	}
+	return nil
+}
+
 // FinalBuildHash returns the hash that identifies the final build image.
 // This is the hash of the last build stage in the chain.
 func FinalBuildHash(p *project.Project) string {
@@ -218,13 +277,17 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		ui.PrintInfo(progress, "Rebuilding without cache")
 	}
 
-	// Check if final build is already cached
 	finalPath, err := BuildImagePath(finalHash)
 	if err != nil {
 		return "", err
 	}
+
+	// Find the deepest usable cached stage. Interrupted builds can leave partial
+	// image files behind; validate the backing chain before trusting the cache.
+	resumeIdx := -1
 	if !opts.NoCache {
-		if _, err := os.Stat(finalPath); err == nil {
+		resumeIdx = deepestUsableCachedStage(stages, progress)
+		if resumeIdx == len(stages)-1 {
 			if err := recordBuildArtifacts(p, stages, finalHash); err != nil {
 				return "", fmt.Errorf("recording build metadata: %w", err)
 			}
@@ -233,21 +296,6 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 				ui.PrintInfo(progress, "Automatic prune failed: %v", err)
 			}
 			return finalPath, nil
-		}
-	}
-
-	// Find the deepest cached stage
-	resumeIdx := -1
-	if !opts.NoCache {
-		for i := len(stages) - 1; i >= 0; i-- {
-			p, err := BuildImagePath(stages[i].Hash)
-			if err != nil {
-				continue
-			}
-			if _, err := os.Stat(p); err == nil {
-				resumeIdx = i
-				break
-			}
 		}
 	}
 
@@ -273,6 +321,9 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 		}
 		ui.PrintInfo(progress, "Creating base stage %s", ui.MutedStyle.Render(baseStage.Hash[:8]))
 		tmpPath := basePath + ".tmp"
+		if err := removeStaleBuildTemp(tmpPath); err != nil {
+			return "", err
+		}
 
 		src, err := os.Open(baseImagePath)
 		if err != nil {
@@ -351,6 +402,9 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 			}
 
 			tmpPath := stagePath + ".tmp"
+			if err := removeStaleBuildTemp(tmpPath); err != nil {
+				return "", err
+			}
 			if err := CreateOverlay(tmpPath, prevPath); err != nil {
 				return "", fmt.Errorf("creating overlay for stage %s: %w", stage.Hash[:8], err)
 			}

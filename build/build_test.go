@@ -244,6 +244,111 @@ func TestBuildImageExists(t *testing.T) {
 	}
 }
 
+func TestRemoveStaleBuildTemp(t *testing.T) {
+	tmpPath := filepath.Join(t.TempDir(), "stage.qcow2.tmp")
+	if err := os.WriteFile(tmpPath, []byte("partial"), 0644); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	if err := removeStaleBuildTemp(tmpPath); err != nil {
+		t.Fatalf("removeStaleBuildTemp() error: %v", err)
+	}
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Fatalf("stale temp still exists, stat error = %v", err)
+	}
+	if err := removeStaleBuildTemp(tmpPath); err != nil {
+		t.Fatalf("removeStaleBuildTemp() missing file error: %v", err)
+	}
+}
+
+func TestDeepestUsableCachedStageDiscardsInvalidStage(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TANK_CACHE_DIR", tempDir)
+	installFakeQemuImg(t, tempDir)
+
+	buildsDir := filepath.Join(tempDir, "builds")
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+
+	validHash := strings.Repeat("a", 64)
+	invalidHash := strings.Repeat("b", 64)
+	descendantHash := strings.Repeat("c", 64)
+	stages := []project.BuildStage{
+		{Hash: validHash},
+		{Hash: invalidHash},
+		{Hash: descendantHash},
+	}
+	for _, stage := range stages {
+		path, err := BuildImagePath(stage.Hash)
+		if err != nil {
+			t.Fatalf("BuildImagePath() error: %v", err)
+		}
+		content := []byte("valid")
+		if stage.Hash == invalidHash {
+			content = []byte("invalid")
+		}
+		if err := os.WriteFile(path, content, 0644); err != nil {
+			t.Fatalf("os.WriteFile() error: %v", err)
+		}
+	}
+
+	var progress bytes.Buffer
+	got := deepestUsableCachedStage(stages, &progress)
+	if got != 0 {
+		t.Fatalf("deepestUsableCachedStage() = %d, want 0", got)
+	}
+
+	invalidPath := filepath.Join(buildsDir, invalidHash+".qcow2")
+	if _, err := os.Stat(invalidPath); !os.IsNotExist(err) {
+		t.Fatalf("invalid cached stage was not removed, stat error = %v", err)
+	}
+	descendantPath := filepath.Join(buildsDir, descendantHash+".qcow2")
+	if _, err := os.Stat(descendantPath); !os.IsNotExist(err) {
+		t.Fatalf("descendant cached stage was not removed, stat error = %v", err)
+	}
+
+	output := progress.String()
+	if !strings.Contains(output, "Discarding invalid cached stage") || !strings.Contains(output, "invalid image") {
+		t.Fatalf("progress = %q, want invalid cache details", output)
+	}
+}
+
+func TestImageFormatIncludesQemuImgOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	installFakeQemuImg(t, tempDir)
+
+	_, err := ImageFormat(filepath.Join(tempDir, "invalid.qcow2"))
+	if err == nil {
+		t.Fatal("ImageFormat() error = nil, want failure")
+	}
+	if !strings.Contains(err.Error(), "invalid image") {
+		t.Fatalf("ImageFormat() error = %q, want qemu-img output", err.Error())
+	}
+}
+
+func installFakeQemuImg(t *testing.T, tempDir string) {
+	t.Helper()
+	binDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll() error: %v", err)
+	}
+	qemuImg := filepath.Join(binDir, "qemu-img")
+	script := `#!/bin/sh
+case "$*" in
+	*invalid*|*bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb*)
+		printf 'invalid image\n' >&2
+		exit 1
+		;;
+esac
+printf '{"format":"qcow2"}\n'
+`
+	if err := os.WriteFile(qemuImg, []byte(script), 0755); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestHasScriptShebang(t *testing.T) {
 	tests := []struct {
 		name    string

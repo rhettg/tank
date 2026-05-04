@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // ImageFormat returns the format of a disk image (e.g., "qcow2", "raw")
 // by running qemu-img info and parsing the JSON output.
 func ImageFormat(path string) (string, error) {
-	out, err := exec.Command("qemu-img", "info", "--output=json", path).Output()
+	out, err := exec.Command("qemu-img", "info", "--output=json", path).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("qemu-img info %s: %w", path, err)
+		return "", fmt.Errorf("qemu-img info %s: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
 
 	var info struct {
