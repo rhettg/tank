@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 )
 
 // Step represents a single step in a multi-step process
@@ -186,9 +188,36 @@ func (m SpinnerModel) View() string {
 
 type doneMsg struct{ err error }
 
+// IsTerminalFile reports whether file is attached to an interactive terminal.
+func IsTerminalFile(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	return term.IsTerminal(file.Fd())
+}
+
+func isTerminalWriter(w io.Writer) bool {
+	file, ok := w.(*os.File)
+	return ok && IsTerminalFile(file)
+}
+
+func hasInteractiveTerminal(w io.Writer) bool {
+	return IsTerminalFile(os.Stdin) && isTerminalWriter(w)
+}
+
 // RunWithSpinner runs a function with a spinner display.
 func RunWithSpinner(w io.Writer, message string, fn func() error) error {
-	p := tea.NewProgram(NewSpinner(message), tea.WithOutput(w))
+	if !hasInteractiveTerminal(w) {
+		PrintStep(w, "%s", message)
+		if err := fn(); err != nil {
+			PrintError(w, "%s", message)
+			return err
+		}
+		PrintSuccess(w, "%s", message)
+		return nil
+	}
+
+	p := tea.NewProgram(NewSpinner(message), tea.WithInput(os.Stdin), tea.WithOutput(w))
 
 	go func() {
 		err := fn()
@@ -288,8 +317,24 @@ func formatDuration(d time.Duration) string {
 // The polling function should return (true, nil) when done, (false, nil) to keep waiting,
 // or (false, err) to stop with an error.
 func RunWithWaiting(w io.Writer, message string, interval time.Duration, fn WaitForFunc) error {
+	if !hasInteractiveTerminal(w) {
+		PrintStep(w, "%s", message)
+		for {
+			done, err := fn()
+			if err != nil {
+				PrintError(w, "%s", message)
+				return err
+			}
+			if done {
+				PrintSuccess(w, "%s", message)
+				return nil
+			}
+			time.Sleep(interval)
+		}
+	}
+
 	m := newWaitModel(message, interval, fn)
-	p := tea.NewProgram(m, tea.WithOutput(w))
+	p := tea.NewProgram(m, tea.WithInput(os.Stdin), tea.WithOutput(w))
 
 	result, err := p.Run()
 	if err != nil {

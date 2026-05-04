@@ -133,7 +133,7 @@ func newSSHCmd(projectPath *string) *cobra.Command {
 }
 
 func shouldDisableTTY(extraSSHArgs []string) bool {
-	if isTerminal(os.Stdin) {
+	if ui.IsTerminalFile(os.Stdin) {
 		return false
 	}
 
@@ -157,12 +157,4 @@ func shouldDisableTTY(extraSSHArgs []string) bool {
 	}
 
 	return true
-}
-
-func isTerminal(file *os.File) bool {
-	info, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
 }
