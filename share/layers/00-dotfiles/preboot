@@ -5,31 +5,85 @@ set -euo pipefail
 # so the firstboot script can clone and install it.
 #
 # Optional environment variables:
-#   DOTFILES_REPO        - Git URL of the dotfiles repository
+#   DOTFILES_REPO        - Git URL of the dotfiles repository.
+#                          Alias: DOTFILES_REPO_URL
 #                          (default: https://github.com/$USER/dotfiles.git)
-#   DOTFILES_INSTALL_CMD - Command to run after cloning (default: ./install.sh if it exists)
+#   DOTFILES_INSTALL_CMD - Command to run after cloning.
+#   DOTFILES_INSTALL_DIR - Directory under the target user's home.
+#                          (default: .dotfiles)
 #
 # Tank environment variables (set by tank):
 #   TANK_CLOUD_INIT     - Path to cloud-init file to edit
 #   TANK_INSTANCE_NAME  - Name of the instance being created
-
-DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/${USER}/dotfiles.git}"
 
 if [ -z "${TANK_CLOUD_INIT:-}" ]; then
     echo "Error: TANK_CLOUD_INIT not set - is this running as a preboot hook?" >&2
     exit 1
 fi
 
-install_cmd="${DOTFILES_INSTALL_CMD:-}"
+export DOTFILES_REPO="${DOTFILES_REPO:-${DOTFILES_REPO_URL:-https://github.com/${USER}/dotfiles.git}}"
+export DOTFILES_INSTALL_CMD="${DOTFILES_INSTALL_CMD:-}"
+export DOTFILES_INSTALL_DIR="${DOTFILES_INSTALL_DIR:-.dotfiles}"
 
-cat >>"$TANK_CLOUD_INIT" <<EOF
+script_path="$(mktemp)"
+trap 'rm -f "$script_path"' EXIT
 
-write_files:
-  - path: /run/tank/dotfiles.env
-    permissions: "0644"
-    content: |
-      DOTFILES_REPO=${DOTFILES_REPO}
-      DOTFILES_INSTALL_CMD=${install_cmd}
-EOF
+cat >"$script_path" <<'PY'
+import os
+import shlex
+from pathlib import Path
+
+
+def get_env(name: str) -> str:
+    value = os.environ.get(name)
+    if value is None:
+        raise SystemExit(f"{name} is not set")
+    return value
+
+
+cloud_init_path = Path(get_env("TANK_CLOUD_INIT"))
+dotfiles_repo = get_env("DOTFILES_REPO")
+install_cmd = get_env("DOTFILES_INSTALL_CMD")
+install_dir = get_env("DOTFILES_INSTALL_DIR")
+
+if not cloud_init_path.exists():
+    raise SystemExit(f"TANK_CLOUD_INIT does not exist: {cloud_init_path}")
+
+entry = [
+    "  - path: /run/tank/dotfiles.env",
+    '    permissions: "0644"',
+    "    content: |",
+    f"      DOTFILES_REPO={shlex.quote(dotfiles_repo)}",
+    f"      DOTFILES_REPO_URL={shlex.quote(dotfiles_repo)}",
+    f"      DOTFILES_INSTALL_CMD={shlex.quote(install_cmd)}",
+    f"      DOTFILES_INSTALL_DIR={shlex.quote(install_dir)}",
+]
+
+raw = cloud_init_path.read_text().splitlines()
+has_header = bool(raw) and raw[0].strip() == "#cloud-config"
+lines = raw[1:] if has_header else raw
+
+write_files_idx = next((i for i, line in enumerate(lines) if line == "write_files:"), None)
+if write_files_idx is None:
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.append("write_files:")
+    lines.extend(entry)
+else:
+    insert_at = len(lines)
+    for i in range(write_files_idx + 1, len(lines)):
+        line = lines[i]
+        if line and not line.startswith((" ", "\t")) and not line.startswith("#"):
+            insert_at = i
+            break
+    if insert_at > write_files_idx + 1 and lines[insert_at - 1] != "":
+        lines.insert(insert_at, "")
+        insert_at += 1
+    lines[insert_at:insert_at] = entry
+
+cloud_init_path.write_text("#cloud-config\n" + "\n".join(lines).rstrip() + "\n")
+PY
+
+python3 "$script_path"
 
 echo "Injected dotfiles config into cloud-init (repo: ${DOTFILES_REPO})"
