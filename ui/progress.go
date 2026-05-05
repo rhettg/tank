@@ -162,6 +162,8 @@ func (m SpinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			m.done = true
+			m.err = fmt.Errorf("interrupted")
 			return m, tea.Quit
 		}
 	case spinner.TickMsg:
@@ -224,10 +226,13 @@ func RunWithSpinner(w io.Writer, message string, fn func() error) error {
 		p.Send(doneMsg{err: err})
 	}()
 
-	if _, err := p.Run(); err != nil {
+	result, err := p.Run()
+	if err != nil {
 		return err
 	}
-	return nil
+
+	final := result.(SpinnerModel)
+	return final.err
 }
 
 // WaitForFunc is a polling function that returns (done, error).
