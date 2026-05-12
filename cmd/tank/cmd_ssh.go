@@ -82,11 +82,14 @@ func newSSHCmd(projectPath *string) *cobra.Command {
 				"-o", "LogLevel=ERROR",
 			}
 
+			probeSSHArgs := append([]string(nil), sshArgs...)
 			if shouldDisableTTY(extraSSHArgs) {
 				sshArgs = append(sshArgs, "-T")
 			}
 
-			sshArgs = append(sshArgs, fmt.Sprintf("%s@%s", currentUser.Username, ip))
+			destination := fmt.Sprintf("%s@%s", currentUser.Username, ip)
+			sshArgs = append(sshArgs, destination)
+			probeSSHArgs = append(probeSSHArgs, "-T", destination)
 
 			// Append any extra args passed after --
 			sshArgs = append(sshArgs, extraSSHArgs...)
@@ -95,7 +98,7 @@ func newSSHCmd(projectPath *string) *cobra.Command {
 			sshAttempt := 0
 			err = ui.RunWithWaiting(os.Stderr, "Waiting for SSH", 2*time.Second, func() (bool, error) {
 				sshAttempt++
-				probe := exec.Command("ssh", append(sshArgs, "true")...)
+				probe := exec.Command("ssh", append(probeSSHArgs, "true")...)
 				if output, err := probe.CombinedOutput(); err != nil {
 					var exitErr *exec.ExitError
 					if errors.As(err, &exitErr) && exitErr.ExitCode() == 255 {
