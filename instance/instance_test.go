@@ -53,3 +53,19 @@ func TestDomainName(t *testing.T) {
 		t.Errorf("Domain = %q, want %q", inst.Domain, "tank-myproject")
 	}
 }
+
+func TestMACAddress(t *testing.T) {
+	mac := MACAddress("review")
+	if mac != MACAddress("review") {
+		t.Fatal("MACAddress() is not deterministic")
+	}
+	if mac == MACAddress("paste") {
+		t.Fatal("MACAddress() returned the same address for different instances")
+	}
+	if len(mac) != len("52:54:00:00:00:00") {
+		t.Fatalf("MACAddress() = %q, want QEMU MAC format", mac)
+	}
+	if mac[:8] != "52:54:00" {
+		t.Fatalf("MACAddress() = %q, want QEMU OUI prefix", mac)
+	}
+}

@@ -551,6 +551,41 @@ func TestApplyLayerVerboseStreamsVirtCustomizeOutput(t *testing.T) {
 	}
 }
 
+func TestPrepareImageForClonesClearsMachineIdentity(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	argsPath := filepath.Join(tempDir, "args")
+	t.Setenv("VIRT_CUSTOMIZE_ARGS", argsPath)
+
+	virtCustomize := filepath.Join(tempDir, "virt-customize")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$VIRT_CUSTOMIZE_ARGS\"\n"
+	if err := os.WriteFile(virtCustomize, []byte(script), 0755); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	origRunWithSpinner := runWithSpinner
+	runWithSpinner = func(_ io.Writer, _ string, fn func() error) error { return fn() }
+	defer func() { runWithSpinner = origRunWithSpinner }()
+
+	var progress bytes.Buffer
+	if err := prepareImageForClones("/tmp/image.qcow2", "", &progress, false); err != nil {
+		t.Fatalf("prepareImageForClones() error: %v", err)
+	}
+
+	content, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(argsPath) error: %v", err)
+	}
+	args := string(content)
+	if !strings.Contains(args, "truncate -s 0 /etc/machine-id || true") {
+		t.Fatalf("virt-customize args missing /etc/machine-id reset: %q", args)
+	}
+	if !strings.Contains(args, "rm -f /var/lib/dbus/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id || true") {
+		t.Fatalf("virt-customize args missing dbus machine-id symlink reset: %q", args)
+	}
+}
+
 func TestRecordBuildArtifacts(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TANK_CACHE_DIR", tempDir)

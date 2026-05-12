@@ -12,14 +12,14 @@ import (
 
 // Layer represents a single layer in the project.
 type Layer struct {
-        Name         string   // "10-common"
-        Path         string   // Full path to layer directory
-        HasScript    bool     // install exists
-        HasFiles     bool     // files/ directory exists
-        HasFirstboot bool     // firstboot exists
-        HasPreboot   bool     // preboot exists (host-side hook)
-        ContentHash  string   // SHA256 of layer contents
-        Volumes      []Volume // Volume declarations from volumes/ directory
+	Name         string   // "10-common"
+	Path         string   // Full path to layer directory
+	HasScript    bool     // install exists
+	HasFiles     bool     // files/ directory exists
+	HasFirstboot bool     // firstboot exists
+	HasPreboot   bool     // preboot exists (host-side hook)
+	ContentHash  string   // SHA256 of layer contents
+	Volumes      []Volume // Volume declarations from volumes/ directory
 }
 
 // Project represents a tank project.
@@ -67,6 +67,7 @@ func (p *Project) BuildChain(rootSize string) []BuildStage {
 	h := sha256.New()
 	h.Write([]byte("base:" + p.Base + "\n"))
 	h.Write([]byte("rootSize:" + rootSize + "\n"))
+	h.Write([]byte("imageFinalizer:machine-id-v2\n"))
 	baseHash := hex.EncodeToString(h.Sum(nil))
 
 	stages := []BuildStage{{Hash: baseHash, Layer: nil}}
@@ -135,17 +136,17 @@ func Load(path string) (*Project, error) {
 			Path: layerPath,
 		}
 
-                // Check for install
-                scriptPath := filepath.Join(layerPath, "install")
-                if _, err := os.Stat(scriptPath); err == nil {
-                        layer.HasScript = true
-                }
+		// Check for install
+		scriptPath := filepath.Join(layerPath, "install")
+		if _, err := os.Stat(scriptPath); err == nil {
+			layer.HasScript = true
+		}
 
-                // Check for firstboot
-                firstbootPath := filepath.Join(layerPath, "firstboot")
-                if _, err := os.Stat(firstbootPath); err == nil {
-                        layer.HasFirstboot = true
-                }
+		// Check for firstboot
+		firstbootPath := filepath.Join(layerPath, "firstboot")
+		if _, err := os.Stat(firstbootPath); err == nil {
+			layer.HasFirstboot = true
+		}
 
 		// Check for preboot (host-side hook)
 		prebootPath := filepath.Join(layerPath, "preboot")

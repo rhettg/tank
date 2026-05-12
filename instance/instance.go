@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -36,11 +37,12 @@ users:
 
 // Instance represents a running or stopped VM instance.
 type Instance struct {
-	Name      string // Instance name (default: project directory name)
-	Dir       string // Instance directory path
-	DiskPath  string // Path to COW overlay disk
-	ISOPath   string // Path to cloud-init ISO
-	Domain    string // libvirt domain name (tank-<name>)
+	Name     string // Instance name (default: project directory name)
+	Dir      string // Instance directory path
+	DiskPath string // Path to COW overlay disk
+	ISOPath  string // Path to cloud-init ISO
+	Domain   string // libvirt domain name (tank-<name>)
+	MAC      string // Stable libvirt network MAC address
 }
 
 // InstanceDir returns the directory for an instance.
@@ -85,6 +87,7 @@ func Create(name, buildImagePath, cloudInitYAML string, progress io.Writer) (*In
 		DiskPath: filepath.Join(dir, "disk.qcow2"),
 		ISOPath:  filepath.Join(dir, "cloud-init.iso"),
 		Domain:   "tank-" + name,
+		MAC:      MACAddress(name),
 	}
 
 	// Create COW overlay disk backed by build image
@@ -218,7 +221,7 @@ func (inst *Instance) Start(cpus, memoryMB int, volumeDisks []string, volumeFS [
 		"--disk", inst.DiskPath,
 		"--import",
 		"--os-variant", "linux2022",
-		"--network", "default",
+		"--network", "network=default,mac=" + inst.MAC,
 		"--graphics", "none",
 		"--noautoconsole",
 	}
@@ -264,6 +267,7 @@ func Load(name string) (*Instance, error) {
 		DiskPath: filepath.Join(dir, "disk.qcow2"),
 		ISOPath:  filepath.Join(dir, "cloud-init.iso"),
 		Domain:   "tank-" + name,
+		MAC:      MACAddress(name),
 	}
 
 	// Check if ISO exists
@@ -272,6 +276,12 @@ func Load(name string) (*Instance, error) {
 	}
 
 	return inst, nil
+}
+
+// MACAddress returns a deterministic QEMU/KVM MAC address for an instance.
+func MACAddress(name string) string {
+	sum := sha256.Sum256([]byte("tank-instance-mac:" + name))
+	return fmt.Sprintf("52:54:00:%02x:%02x:%02x", sum[0], sum[1], sum[2])
 }
 
 // IPAddress returns the VM's IPv4 address via virsh domifaddr.

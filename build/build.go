@@ -370,6 +370,17 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 			}
 		}
 
+		applianceDir, err := EnsureGuestfsAppliance(progress)
+		if err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
+
+		if err := prepareImageForClones(tmpPath, applianceDir, progress, opts.Verbose); err != nil {
+			os.Remove(tmpPath)
+			return "", err
+		}
+
 		if err := os.Rename(tmpPath, basePath); err != nil {
 			os.Remove(tmpPath)
 			return "", err
@@ -411,6 +422,11 @@ func Build(p *project.Project, progress io.Writer, opts BuildOptions) (string, e
 
 			// Apply this single layer
 			if err := applyLayer(tmpPath, stage.Layer, applianceDir, progress, opts.Verbose); err != nil {
+				os.Remove(tmpPath)
+				return "", err
+			}
+
+			if err := prepareImageForClones(tmpPath, applianceDir, progress, opts.Verbose); err != nil {
 				os.Remove(tmpPath)
 				return "", err
 			}
@@ -494,6 +510,48 @@ func applyLayer(imagePath string, layer *project.Layer, applianceDir string, pro
 			}
 		}
 		return fmt.Errorf("applying layer %s: %w", layer.Name, err)
+	}
+	return nil
+}
+
+// prepareImageForClones removes persistent guest identity from the shared build
+// base so every instance overlay generates its own identity on first boot.
+func prepareImageForClones(imagePath string, applianceDir string, progress io.Writer, verbose bool) error {
+	args := []string{
+		"-a", imagePath,
+		"--run-command", "truncate -s 0 /etc/machine-id || true",
+		"--run-command", "rm -f /var/lib/dbus/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id || true",
+	}
+
+	cmd := exec.Command("virt-customize", args...)
+	env, err := guestfsEnv(applianceDir)
+	if err != nil {
+		return err
+	}
+	cmd.Env = env
+
+	if verbose {
+		ui.PrintStep(progress, "Preparing image for cloning")
+		cmd.Stdout = progress
+		cmd.Stderr = progress
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("preparing image for cloning: %w", err)
+		}
+		return nil
+	}
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := runWithSpinner(progress, "Preparing image for cloning", cmd.Run); err != nil {
+		if output.Len() > 0 {
+			fmt.Fprint(progress, output.String())
+			if !bytes.HasSuffix(output.Bytes(), []byte{'\n'}) {
+				fmt.Fprintln(progress)
+			}
+		}
+		return fmt.Errorf("preparing image for cloning: %w", err)
 	}
 	return nil
 }
